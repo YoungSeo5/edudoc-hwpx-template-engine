@@ -1,0 +1,4 @@
+# --- HWPX 승인 템플릿 렌더링/QA 엔진이 실제로 쓰는 것만 ---
+python-hwpx          # strict HWPX package validation (hwpx.validate_package)
+lxml                 # XML 파싱 (python-hwpx 의존)
+fonttools            # HWPX 한 줄 제약에서 원본 TTF 글자 폭 측정

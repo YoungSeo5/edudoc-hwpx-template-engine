@@ -1,0 +1,44 @@
+{
+  "template_id": "fss_director_report",
+  "title_field": "제목",
+  "fields": {
+    "보고일": "date_01",
+    "제목": "title_01",
+    "결론": "conclusion_01"
+  },
+  "blocks": {
+    "본문": {
+      "anchor": "content_01",
+      "repeat": true,
+      "table_scope": false,
+      "levels": {
+        "0": {
+          "field": "content_01",
+          "prefix": ""
+        }
+      }
+    }
+  },
+  "metadata": {
+    "report_date": {
+      "field": "없는필드"
+    },
+    "description": {
+      "field": "결론"
+    },
+    "subject": {
+      "block": "본문",
+      "level": 0,
+      "separator": ", "
+    },
+    "keywords": {
+      "separator": ", ",
+      "sources": [
+        {
+          "block": "본문",
+          "level": 0
+        }
+      ]
+    }
+  }
+}

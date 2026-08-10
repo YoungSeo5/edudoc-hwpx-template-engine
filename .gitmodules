@@ -1,0 +1,3 @@
+[submodule "skills/hwp-skill"]
+	path = skills/hwp-skill
+	url = https://github.com/YoungSeo5/edudoc_hwp_skill.git
