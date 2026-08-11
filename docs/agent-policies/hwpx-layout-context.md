@@ -115,12 +115,16 @@ class DocumentLayout:
         """
         index = paragraph_anchor(field)
         context = {"para_pr_id_ref": self.paragraph_styles[index]}
-        # fwSpace는 문단이 아니라 text node 단위다.
-        leading, trailing = self.fwspace_counts[field["text_node_index"]]
-        if leading:
-            context["leading_fwspace_count"] = leading
-        if trailing:
-            context["trailing_fwspace_count"] = trailing
+        # fwSpace는 문단이 아니라 text node 단위다. 기록이 없거나 범위를 벗어나면 붙이지 않는다.
+        text_node_index = field.get("text_node_index")
+        if isinstance(text_node_index, int) and 0 <= text_node_index < len(
+            self.fwspace_counts
+        ):
+            leading, trailing = self.fwspace_counts[text_node_index]
+            if leading:
+                context["leading_fwspace_count"] = leading
+            if trailing:
+                context["trailing_fwspace_count"] = trailing
         cell = _cell_anchor(field)
         if cell is not None:
             context["cell_margin"] = self.cell_margins[cell]
@@ -128,8 +132,8 @@ class DocumentLayout:
 ```
 
 `fwspace_counts` 는 `_nodes(section, "t")` 순서로 읽으므로 `text_node_index` 는 **섹션 전역
-`hp:t` 순번**이다. 셀 안에서 몇 번째인지가 아니다. 실제 구현은 `text_node_index` 가 int가
-아니거나 범위를 벗어나면 이 아스펙트를 붙이지 않는다.
+`hp:t` 순번**이다. 셀 안에서 몇 번째인지가 아니다. 실제 구현은 위 가드에 더해 `bool` 도
+`int` 로 통과하지 않도록 배제한다.
 
 `tab`, `container` 등을 추가할 때 손대는 곳은 `read` 와 `context_for` 뿐이다.
 스타일처럼 여러 placeholder가 공유하는 정의는 `margins_of_referenced_styles` 와 같은 방식으로
@@ -190,8 +194,10 @@ def verify_recorded_layout(
 `core/adapters/hwpx_template_renderer.py` 의 `_restore_table_cell_leading_fwspaces` 가
 그 사이를 메운다.
 
-- **본문 전체 복원의 기준본은 원본 패키지다.** 스킬 호출 전 패키지를 `reference_path` 로
-  넘기고, `shutil.copyfile` 로 스킬 출력을 확정하기 **전에** 복원한다. 순서가 뒤집히면
+- **본문 전체 복원의 기준본은 `table_cell` 치환 직전의 렌더 패키지다.**
+  `_write_hwpx_package` 가 일반 field와 package metadata를 반영해 만든 `output_path` 를
+  스킬 호출 전에 `reference_path` 로 넘기고, `shutil.copyfile` 로 스킬 출력을 확정하기
+  **전에** 복원한다. raw `source.hwpx` 를 직접 기준으로 삼는 것이 아니다. 순서가 뒤집히면
   기준본과 대상이 같은 파일이 되어 **이 복원이 조용히 no-op이 된다.** 반면 fwSpace 개수
   보정은 기록된 `leading_fwspace_count` 를 기대값으로 쓰므로(`missing = expected - count`)
   `reference` 를 읽지 않는다. 두 경로가 기준으로 삼는 것이 서로 다르다.
@@ -201,10 +207,12 @@ def verify_recorded_layout(
 - **`replacement_mode` 에 따라 복원 방식이 갈린다.** `table_cell` 인 field는 부족한
   **leading** `<hp:fwSpace/>` 개수만 채운다. `trailing_fwspace_count` 는 기록·검증되지만
   복원되지 않으므로, 스킬이 trailing을 지웠다면 `verify_recorded_layout` 이 불일치로
-  렌더를 실패시킨다. 그렇지 않은 field는 원본의 해당 `hp:t` 본문 전체를 되돌리므로
-  trailing까지 함께 복원된다.
-- 좌표 타입이 어긋난 field는 예외 없이 건너뛴다. 표 복원 대상이 아니라는 뜻이며,
-  실제 불일치는 뒤이어 도는 `verify_recorded_layout` 이 잡는다.
+  렌더를 실패시킨다. 그렇지 않은 field는 `table_cell` 치환 직전 렌더 패키지의 해당
+  `hp:t` 본문 전체를 되돌리므로 trailing까지 함께 복원된다.
+- `section`/`table`/`row`/`col` 타입이 맞지 않거나 현재 채운 셀과 좌표가 일치하지 않는
+  field는 건너뛴다. 반면 `section_index` 를 정수로 변환할 수 없으면 렌더가 중단되고,
+  복원 대상 field의 `text_node_index` 가 없거나 0 이상의 정수가 아니면
+  `HwpxTemplateRenderError` 가 발생한다.
 
 테스트는 `tests/task_scoped/test_fss_one_page_final_rendering.py` 의
 `test_one_page_restores_each_field_fwspace_in_a_filled_table_cell` — 한 셀 안의 여러

@@ -102,7 +102,7 @@ flowchart LR
 
         TABLE{"table_cell 입력 있음?"}
         HWP["출력 HWPX를 hwp-skill에 전달<br/>table cell 치환"]
-        FWSPACE["표 셀 leading fwSpace·원본 hp:t 복원<br/>hwp-skill 출력을 확정하기 전<br/>원본 패키지를 기준본으로 사용"]
+        FWSPACE["표 셀 leading fwSpace·치환 전 hp:t 복원<br/>hwp-skill 출력을 확정하기 전<br/>table_cell 직전 렌더 패키지를 기준본으로 사용"]
 
         LAYOUTCHECK["_validate_rendered_layout()<br/>verify_recorded_layout()"]
         PREVIEW{"package_metadata 있음?"}
