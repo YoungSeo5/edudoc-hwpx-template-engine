@@ -231,8 +231,17 @@ def _section_decisions(
             context.location.row,
             context.location.col,
         )
+        # 셀에 텍스트 노드가 둘 이상이면 셀 단위로 뭉치지 않는다. hwp-skill의
+        # 셀 치환은 첫 노드에만 값을 쓰고 나머지를 비우므로, 리터럴과 변수가
+        # 섞인 셀에서는 리터럴이 소실된다. 그런 셀은 노드 단위로 분류한다.
+        cell_is_multi_node = (
+            is_table_text
+            and None not in table_key
+            and sum(1 for item in table_contexts[table_key] if item.normalized_text) >= 2
+        )
         if (
             is_table_text
+            and not cell_is_multi_node
             and None not in table_key
             and table_key not in seen_table_cells
         ):
@@ -260,12 +269,13 @@ def _section_decisions(
                         "paragraph_index": cell_contexts[0].location.paragraph_index,
                     }
                 )
-        if context.normalized_text and not is_table_text:
+        node_level = not is_table_text or cell_is_multi_node
+        if context.normalized_text and node_level:
             counters[category] = counters.get(category, 0) + 1
             candidate_field_id = f"{category}_{counters[category]:02d}"
         replace = (
             bool(context.normalized_text)
-            and not is_table_text
+            and node_level
             and role is TextRole.CONTENT
         )
         field_id = candidate_field_id if replace else None
