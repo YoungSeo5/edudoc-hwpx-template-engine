@@ -15,11 +15,16 @@
 
 현재 체크아웃된 비공개 템플릿 데이터 기준 상태는 다음과 같습니다.
 
-| 문서 유형 | `template_id` | 상태 |
-|---|---|---|
-| 금감원 원장보고 | `fss_director_report` | `approved` |
-| 금감원 원페이지 | `fss_one_page` | `approved` |
-| 금감원 원장보고 가상자산 이상거래 | `fss_virtual_asset_report` | `candidate` |
+| 문서 유형 | `template_id` | 상태 | 반복 블록 |
+|---|---|---|---|
+| 금감원 원장보고 | `fss_director_report` | `approved` | 1개 — 독립 필드 10개 + 반복 블록 `본문`(5레벨)이 나머지 5개 필드를 쓴다 |
+| 금감원 원페이지 | `fss_one_page` | `approved` | 없음 — 27개 필드를 모두 독립 필드로 채운다 |
+| 금감원 원장보고 가상자산 이상거래 | `fss_virtual_asset_report` | `candidate` | 미정 — `alias_map.json`이 아직 없다 |
+
+승인된 두 템플릿이 이 엔진의 두 가지 채우기 방식을 그대로 보여줍니다. 반복 구조를 가진
+원장보고는 `blocks` 계약 하나로 항목 수만큼 문단을 전개하고, 고정 칸이 많은 원페이지는
+같은 엔진에서 반복 계약 없이 필드별로 채웁니다. 어느 쪽을 쓸지는 코드가 아니라 사람이
+쓴 [`alias_map.json` 계약](#alias_mapjson-계약)이 정합니다.
 
 ## 작업 흐름
 
@@ -104,7 +109,7 @@ QA 명령이 성공하면 후보 폴더에서 아래 항목을 함께 검토합�
 |---|---|
 | `source.hwpx` | 입력 원본과 동일한 snapshot인지 |
 | `template.json` | 기관·문서유형·`template_id`와 `status: candidate` |
-| `placeholder_map.json` | field 위치, `replacement_mode`, 레이아웃 계약 |
+| `placeholder_map.json` | field 위치, `replacement_mode`, [레이아웃 계약](docs/agent-policies/hwpx-layout-context.md) (`layout-context-v1`) |
 | `template.review.md` | 자동 분류 결과를 사람이 승인할 수 있는지 |
 | `content.sample.json`, `content.test.json` | 모든 field가 의도한 값을 받는지 |
 | `roundtrip.sample.hwpx`, `roundtrip.test.hwpx` | 원본 구조와 서식이 보존되는지 |
@@ -115,6 +120,93 @@ strict 검증 성공만으로 의미상 field 분류, 반복 구간, 기관 승�
 최종 문서 생성 경로는 `alias_map.json`의 metadata 계약과 요청자 정보도 요구합니다. 등록 CLI는
 후보의 필수 파일·식별자·상태를 검사하지만 이 metadata 계약까지 대신 작성하거나 승인하지
 않으므로, 최종 생성용 후보는 등록 전에 계약을 완성하고 왕복 결과를 다시 확인해야 합니다.
+
+### `alias_map.json` 계약
+
+후보 생성기는 이 파일을 만들지 않습니다. 사람이 승인 판단과 함께 직접 씁니다. 최상위 키는
+아래 일곱 개이고, `fields` 외에는 모두 선택입니다.
+
+| 키 | 키로 쓰는 이름 | 선언하지 않으면 |
+|---|---|---|
+| `fields` (또는 `aliases`) | 사람용 이름 → `field_id` | 계약이 성립하지 않는다 (필수) |
+| `title_field` | `fields`의 사람용 이름 하나 | 문서 제목을 원본 그대로 둔다 |
+| `choices` | 사람용 이름 | 입력값을 그대로 넣는다 |
+| `text_rules` | 사람용 이름 | 값 형식을 검사하지 않는다 |
+| `fit_constraints` | **`field_id`** (사람용 이름이 아니다) | 길이를 검사하지 않는다 |
+| `blocks` | 사람용 이름 | 각 교체 위치를 독립 필드로 렌더한다 |
+| `metadata` | — | **최종 문서를 생성할 수 없다** (후보 왕복만 가능) |
+
+별칭이 존재하지 않는 `field_id`를 가리키면 오류입니다. `field_id`는 문서 순서로 매기는 번호라
+재추출로 밀릴 수 있고, 그 상태를 조용히 통과시키면 다른 문단이 채워지기 때문입니다.
+
+#### `choices` — 선택지 줄 다시 쓰기
+
+```json
+"보고구분": {
+  "options": ["현안검토", "언론보도", "국회 등"],
+  "checked_prefix": "☑ ", "unchecked_prefix": "□ ", "separator": "  "
+}
+```
+
+입력값은 `options` 중 하나여야 합니다. 렌더는 그 칸을 선택지 전체로 다시 쓰므로
+`언론보도`를 넣으면 `□ 현안검토  ☑ 언론보도  □ 국회 등`이 들어갑니다. 목록에 없는 값은 오류입니다.
+
+#### `text_rules` — 값 형식 강제
+
+| 키 | 뜻 |
+|---|---|
+| `single_paragraph` (필수, bool) | 줄바꿈을 금지한다 |
+| `single_sentence` (기본 `false`) | `.!?`가 정확히 하나이고 마지막 글자여야 한다 |
+| `forbidden_suffix` | 그 접미사로 끝나면 오류 (원장보고는 국명에 `국`이 겹치지 않게 쓴다) |
+| `prefix`, `suffix` | 값 앞뒤에 붙일 고정 문구 |
+
+#### `fit_constraints` — 한 줄을 넘기면 렌더 거부
+
+`max_lines`는 `1`만 허용합니다. 렌더 전에 원본 셀의 `cellSz` 너비에서 좌우 `cellMargin`을 뺀
+폭과, 그 문단 `charPr`의 글꼴·크기·장평·자간으로 계산한 실제 글자 폭을 비교합니다. 넘으면
+줄이 늘어나 서식이 깨지므로 출력을 쓰지 않고 실패합니다.
+
+제약이 있습니다. 폭 계산은 Windows 글꼴 파일(`%WINDIR%\Fonts`)을 직접 읽고, 현재 매핑된
+글꼴은 `맑은 고딕`(`malgun.ttf`)과 기호 대체용 `seguisym.ttf`뿐입니다. 다른 글꼴을 쓰는 칸에
+이 제약을 걸면 `has no width metric mapping`으로 실패합니다.
+
+#### `blocks` — 반복 구간
+
+| 키 | 뜻 |
+|---|---|
+| `anchor` | 입력 배열을 받는 `field_id` |
+| `levels` | 레벨 번호 → `{field, prefix}`. 레벨마다 원본의 다른 문단 서식을 그대로 쓴다 |
+| `numbered_level` | 그 레벨에만 `1. `, `2. ` 순번을 자동으로 붙인다 |
+| `item_separator_levels` | 항목 뒤에 원본의 빈 문단을 넣을 레벨 |
+| `section_transition` | 지정한 레벨로 넘어갈 때 다른 구분자를 쓴다 |
+| `repeat`, `table_scope` | 각각 `true`, `false` 고정. 표 안의 반복은 아직 계약에 없다 |
+
+입력은 `[[레벨, 텍스트], ...]` 배열이고, 선언하지 않은 레벨을 쓰면 오류입니다. 어떤 구간을
+반복으로 볼지 판단하는 기준은 아래 절을 따릅니다.
+
+#### `metadata` — `content.hpf` 문서 속성
+
+최종 문서 생성에 반드시 필요합니다. 계약이 없으면 부분 메타데이터로 문서를 쓰는 대신
+렌더를 거부합니다.
+
+| 항목 | 출처로 쓸 수 있는 것 | 결과 |
+|---|---|---|
+| `title` | 필드. `title_field`를 선언했으면 생략 가능 | 비어 있지 않은 값 하나 |
+| `report_date` | 필드 또는 `{"context": "requested_at"}` | 값 하나 (`requested_at`은 UTC ISO 시각) |
+| `description` | 필드 | 없으면 빈 문자열 |
+| `subject` | 필드 또는 반복 블록의 한 레벨. `separator` 필요 | 이어붙인 문자열 |
+| `keywords` | 위 두 형태를 `sources` 배열로. `separator` 필요 | 이어붙인 문자열 |
+
+`{"field": "담당.국", "suffix": "국"}`처럼 접미사를 붙일 수 있고,
+`{"block": "본문", "level": 0}`은 그 레벨 항목만 모읍니다. 두 승인 템플릿이 서로 다른 방식을
+씁니다. 원장보고는 `report_date`를 입력 필드에서 받고 `subject`를 반복 블록 0레벨에서 모으며,
+원페이지는 `report_date`를 렌더 시각(`requested_at`)으로 채웁니다.
+
+값은 `choices`와 `text_rules`를 적용하기 **전에** 읽습니다. 그래서 문서 속성에는 체크박스 줄이
+아니라 사람이 쓴 `언론보도`가 들어갑니다.
+
+실제로 기록되는 값은 아홉 개입니다. 위 다섯 개 외에 `creator`와 `lastsaveby`는
+`--requester-name`이, `CreatedDate`와 `ModifiedDate`는 렌더 시각이 채웁니다.
 
 ### 반복 계약을 정하는 기준
 
@@ -268,7 +360,11 @@ macOS/Linux Bash:
 - 공개 저장소에는 엔진 코드·CLI·검증 정책·테스트가 있습니다.
 - 실제 기관 템플릿은 비공개 `templates/institutions/` submodule에 있습니다. 이 경로가
   없으면 승인 템플릿 조회와 최종 렌더를 사용할 수 없습니다.
-- 표 셀 치환은 `skills/hwp-skill/` submodule의 `scripts/fill_hwpx.py`를 사용합니다.
+- 표 셀 치환은 `skills/hwp-skill/` submodule의 `scripts/fill_hwpx.py`에 위임합니다. 렌더러는
+  `placeholder_map.json`의 **필드별** `replacement_mode`가 `table_cell`인 항목만 이 경로로
+  보냅니다. 현재 승인된 두 템플릿의 맵에는 그 필드별 키가 아예 없어서 이 경로가 실행되지
+  않습니다. 맵 최상단의 `replacement_mode: hp_t_text_only`는 필드별 키가 없을 때의 기본값으로
+  계산된 요약값이며, 원본에 표 셀 필드가 없다는 뜻이 아닙니다.
 - 일반 DOCX/PPTX export, 공문 스타일, 일반 `md2hwpx` 변환은 이 저장소 범위가 아닙니다.
 - Python 패키지 의존성은 `requirements.txt`의 `python-hwpx`, `lxml`, `fonttools`입니다.
 
