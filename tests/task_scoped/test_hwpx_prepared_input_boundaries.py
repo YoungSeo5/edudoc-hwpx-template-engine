@@ -19,6 +19,9 @@ ROOT = Path(__file__).resolve().parents[2]
 TEMPLATE_DIR = (
     ROOT / "templates" / "institutions" / "금융감독원" / "금감원 원장보고"
 )
+CANDIDATE_TEMPLATE_DIR = (
+    ROOT / "templates" / "institutions" / "금융감독원" / "금감원 원페이지"
+)
 CONTENT_PATH = (
     ROOT
     / "tests"
@@ -107,3 +110,69 @@ def test_approved_template_cli_renders_after_boundary_refactor(
 
     assert exit_code == 0
     assert output.is_file()
+
+
+def test_approved_template_cli_rejects_candidate(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    # Given: content belongs to a template that has not been approved.
+    output = tmp_path / "candidate.hwpx"
+
+    # When: the final-render CLI is asked to use that candidate.
+    exit_code = render_cli.main(
+        [
+            "--institution",
+            "금융감독원",
+            "--document-type",
+            "금감원 원페이지",
+            "--content",
+            str(CANDIDATE_TEMPLATE_DIR / "content.sample.json"),
+            "--output",
+            str(output),
+            "--requester-name",
+            "오영서",
+        ]
+    )
+
+    # Then: the CLI refuses the unapproved route and creates no document.
+    summary = json.loads(capsys.readouterr().out)
+    assert exit_code == 1
+    assert summary["ok"] is False
+    assert "approved institution template not found" in summary["error"]
+    assert not output.exists()
+
+
+def test_approved_template_cli_rejects_content_template_id_mismatch(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    # Given: an approved template is paired with content for another template ID.
+    content = json.loads(
+        (TEMPLATE_DIR / "content.sample.json").read_text(encoding="utf-8")
+    )
+    content["template_id"] = "different_template"
+    content_path = tmp_path / "content.json"
+    content_path.write_text(json.dumps(content, ensure_ascii=False), encoding="utf-8")
+    output = tmp_path / "mismatched.hwpx"
+
+    # When: the final-render CLI receives the mismatched content.
+    exit_code = render_cli.main(
+        [
+            "--institution",
+            "금융감독원",
+            "--document-type",
+            "금감원 원장보고",
+            "--content",
+            str(content_path),
+            "--output",
+            str(output),
+        ]
+    )
+
+    # Then: it reports the identity mismatch and writes no output.
+    summary = json.loads(capsys.readouterr().out)
+    assert exit_code == 1
+    assert summary["ok"] is False
+    assert "template_id mismatch" in summary["error"]
+    assert not output.exists()
