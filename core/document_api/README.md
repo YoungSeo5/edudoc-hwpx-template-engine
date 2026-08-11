@@ -23,6 +23,7 @@ external services. HWPX rendering remains owned by `core.adapters`, and approved
 template data remains under `templates/institutions`.
 
 Add a format-specific module only when a second document format is actually
-connected. See the repository
-[architecture](../../docs/architecture.md) and
+connected. See the
+[render/QA pipeline diagram](../../docs/agent-policies/hwpx-render-pipeline-diagram.md)
+and the
 [HWPX template policy](../../docs/agent-policies/hwpx-template-rendering.md).
