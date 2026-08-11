@@ -323,6 +323,48 @@ def test_one_page_restores_table_cell_leading_fwspaces_after_skill_fill(
     assert _table_cell_leading_fwspace_count(rendered_section, field) == expected
 
 
+def test_one_page_restores_each_field_fwspace_in_a_filled_table_cell(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    registry_root = _approved_one_page_root(tmp_path)
+    template_dir = registry_root / "금융감독원" / "금감원 원페이지"
+    mapping_path = template_dir / "placeholder_map.json"
+    mapping = json.loads(mapping_path.read_text(encoding="utf-8"))
+    fill_field = next(
+        item for item in mapping["fields"] if item["field_id"] == "content_15"
+    )
+    fill_field["replacement_mode"] = "table_cell"
+    cell_fields = [
+        item
+        for item in mapping["fields"]
+        if (item.get("table"), item.get("row"), item.get("col")) == (4, 2, 0)
+        and item.get("layout_context", {}).get("leading_fwspace_count")
+    ]
+    mapping_path.write_text(
+        json.dumps(mapping, ensure_ascii=False, indent=2) + "\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(document_service, "_TEMPLATE_ROOT", registry_root)
+
+    output = tmp_path / "all_table_cell_indents.hwpx"
+    render_approved_document(
+        "금융감독원",
+        "금감원 원페이지",
+        _content(),
+        output,
+        EXECUTION_CONTEXT,
+    )
+
+    with zipfile.ZipFile(output) as package:
+        rendered_section = package.read("Contents/section0.xml")
+    for field in cell_fields:
+        assert _edge_fwspace_counts_at(
+            rendered_section,
+            field["text_node_index"],
+        )[0] == field["layout_context"]["leading_fwspace_count"]
+
+
 def _cell_margin(section: ElementTree.Element, field: dict) -> dict[str, str] | None:
     local_name = lambda tag: tag.rsplit("}", 1)[-1]
     tables = [node for node in section.iter() if local_name(node.tag) == "tbl"]

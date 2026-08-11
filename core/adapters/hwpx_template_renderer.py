@@ -323,25 +323,32 @@ def _apply_table_fills(
             raise HwpxTemplateRenderError(
                 f"mapped table-cell rendering failed: {table_result.error}"
             )
+        _restore_table_cell_leading_fwspaces(
+            table_output,
+            table_fills,
+            placeholder_map,
+            reference_path=output_path,
+        )
         shutil.copyfile(table_output, output_path)
-    _restore_table_cell_leading_fwspaces(output_path, table_fills, placeholder_map)
 
 
 def _restore_table_cell_leading_fwspaces(
     output_path: Path,
     table_fills: list[HwpxTableCellFill],
     placeholder_map: Mapping[str, JsonValue],
+    *,
+    reference_path: Path,
 ) -> None:
     filled_cells = {
         (fill.section, fill.table, fill.row, fill.col) for fill in table_fills
     }
-    targets: dict[str, dict[tuple[int, int, int], int]] = {}
+    targets: dict[str, dict[tuple[int, int, int, int], tuple[int, bool]]] = {}
     fields = placeholder_map.get("fields", [])
     if not isinstance(fields, list):
         return
     section_ordinals: Mapping[str, int] | None = None
     for field in fields:
-        if not isinstance(field, dict) or field.get("replacement_mode") != "table_cell":
+        if not isinstance(field, dict):
             continue
         context = field.get("layout_context")
         if not isinstance(context, dict):
@@ -353,15 +360,14 @@ def _restore_table_cell_leading_fwspaces(
         table = field.get("table")
         row = field.get("row")
         col = field.get("col")
+        text_node_index = field.get("text_node_index")
         if (
             not isinstance(section, str)
             or not isinstance(table, int)
             or not isinstance(row, int)
             or not isinstance(col, int)
         ):
-            raise HwpxTemplateRenderError(
-                "table-cell leading_fwspace_count requires section and cell coordinates"
-            )
+            continue
         if "section_index" not in field and section_ordinals is None:
             section_ordinals = _section_ordinals(output_path)
         section_index = _table_cell_section_index(field, section_ordinals)
@@ -371,17 +377,33 @@ def _restore_table_cell_leading_fwspaces(
             )
         if (section_index, table, row, col) not in filled_cells:
             continue
-        targets.setdefault(f"Contents/{section}", {})[(table, row, col)] = expected
+        if (
+            not isinstance(text_node_index, int)
+            or isinstance(text_node_index, bool)
+            or text_node_index < 0
+        ):
+            raise HwpxTemplateRenderError(
+                "table-cell leading_fwspace_count requires text_node_index"
+            )
+        targets.setdefault(f"Contents/{section}", {})[
+            (table, row, col, text_node_index)
+        ] = (expected, field.get("replacement_mode") != "table_cell")
 
     if not targets:
         return
     with zipfile.ZipFile(output_path) as source:
         entries = [(info, source.read(info.filename)) for info in source.infolist()]
+    with zipfile.ZipFile(reference_path) as reference:
+        reference_data = {
+            section: reference.read(section).decode("utf-8") for section in targets
+        }
     entry_data = {info.filename: data for info, data in entries}
     restored = {
-        section: _restore_leading_fwspaces_in_section(data.decode("utf-8"), cells).encode(
-            "utf-8"
-        )
+        section: _restore_leading_fwspaces_in_section(
+            data.decode("utf-8"),
+            reference_data[section],
+            cells,
+        ).encode("utf-8")
         for section, cells in targets.items()
         for data in [entry_data[section]]
     }
@@ -398,32 +420,66 @@ def _restore_table_cell_leading_fwspaces(
 
 def _restore_leading_fwspaces_in_section(
     section: str,
-    targets: Mapping[tuple[int, int, int], int],
+    reference: str,
+    targets: Mapping[tuple[int, int, int, int], tuple[int, bool]],
 ) -> str:
     spans = _xml_spans(section)
+    reference_spans = _xml_spans(reference)
     tables = [index for index, span in enumerate(spans) if span.name == "hp:tbl"]
-    insertions: list[tuple[int, str]] = []
-    for table_index, row, col in targets:
-        if table_index >= len(tables):
+    reference_tables = [
+        index for index, span in enumerate(reference_spans) if span.name == "hp:tbl"
+    ]
+    replacements: list[tuple[int, int, str]] = []
+    for table_index, row, col, text_node_index in targets:
+        if table_index >= len(tables) or table_index >= len(reference_tables):
             raise HwpxTemplateRenderError(
                 f"table-cell fwSpace restoration cannot find table {table_index}"
             )
         table_span = tables[table_index]
         cell_span = _cell_span(spans, table_span, row, col, section)
-        text_span = _first_text_span_in_cell(spans, cell_span)
+        text_span = _text_span_in_cell(spans, cell_span, text_node_index)
+        expected, preserve_content = targets[(table_index, row, col, text_node_index)]
+        if preserve_content:
+            reference_table_span = reference_tables[table_index]
+            reference_cell_span = _cell_span(
+                reference_spans,
+                reference_table_span,
+                row,
+                col,
+                reference,
+            )
+            reference_text_span = _text_span_in_cell(
+                reference_spans,
+                reference_cell_span,
+                text_node_index,
+            )
+            replacements.append(
+                (
+                    text_span.open_end,
+                    text_span.content_end,
+                    reference[
+                        reference_text_span.open_end : reference_text_span.content_end
+                    ],
+                )
+            )
+            continue
         body = section[text_span.open_end : text_span.content_end]
         position = 0
         count = 0
         while match := _LEADING_FWSPACE_TAG_RE.match(body, position):
             position = match.end()
             count += 1
-        missing = targets[(table_index, row, col)] - count
+        missing = expected - count
         if missing > 0:
-            insertions.append(
-                (text_span.open_end + position, "<hp:fwSpace/>" * missing)
+            replacements.append(
+                (
+                    text_span.open_end + position,
+                    text_span.open_end + position,
+                    "<hp:fwSpace/>" * missing,
+                )
             )
-    for position, value in sorted(insertions, reverse=True):
-        section = section[:position] + value + section[position:]
+    for start, end, value in sorted(replacements, reverse=True):
+        section = section[:start] + value + section[end:]
     return section
 
 
@@ -494,12 +550,18 @@ def _cell_span(
     )
 
 
-def _first_text_span_in_cell(spans: list[_XmlSpan], cell_span: int) -> _XmlSpan:
-    for index, span in enumerate(spans):
-        if span.name == "hp:t" and _nearest_ancestor(spans, index, "hp:tc") == cell_span:
-            return span
+def _text_span_in_cell(
+    spans: list[_XmlSpan],
+    cell_span: int,
+    text_node_index: int,
+) -> _XmlSpan:
+    text_spans = [index for index, span in enumerate(spans) if span.name == "hp:t"]
+    if text_node_index < len(text_spans):
+        span_index = text_spans[text_node_index]
+        if _nearest_ancestor(spans, span_index, "hp:tc") == cell_span:
+            return spans[span_index]
     raise HwpxTemplateRenderError(
-        "table-cell fill removed the first hp:t needed for fwSpace restoration"
+        f"table-cell fill moved text node {text_node_index} outside its recorded cell"
     )
 
 
