@@ -56,12 +56,19 @@ output are separate routes.
 
 ## Layout preservation
 
-Which formatting a placeholder must preserve (paragraph style, paragraph
-margins, cell margins) is currently decided in four separate places, and the
-contract exists for only one approved template. The single recorded contract
-that replaces them is designed in
-[HWPX 레이아웃 보존 계약 (설계)](hwpx-layout-context.md). That design is
-planned, not implemented.
+Placeholder layout is recorded as `layout-context-v1` and checked by the shared
+`verify_recorded_layout()` boundary during separation, QA round-trip, and final
+rendering. The implemented contract is documented in
+[HWPX 레이아웃 보존 계약](hwpx-layout-context.md).
+
+## Repeat boundary
+
+Candidate extraction reports structure and creates independent replacement
+fields. It does not infer semantic repeat regions from an arbitrary document.
+Only a human-reviewed `alias_map.json` `blocks` contract may declare a repeat
+anchor, levels, and separators; the renderer then expands that declared source
+structure for the supplied item count. A template without that contract follows
+the ordinary non-repeat render path.
 
 ## Pipeline diagram
 

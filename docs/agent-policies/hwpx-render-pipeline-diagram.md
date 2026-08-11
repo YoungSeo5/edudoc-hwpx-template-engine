@@ -8,7 +8,7 @@
 
 ## 검증 상태
 
-2026-08-10에 아래 소스와 한 줄씩 대조하여 정확성을 확인했다. 이후 파이프라인이
+2026-08-11에 아래 소스와 한 줄씩 대조하여 정확성을 확인했다. 이후 파이프라인이
 바뀌면 이 다이어그램은 자동으로 갱신되지 않으므로, 관련 코드를 바꿀 때 함께
 갱신하거나 최소한 정확성을 재확인해야 한다.
 
@@ -26,7 +26,7 @@
 ```mermaid
 flowchart LR
     subgraph ENTRY["① 진입과 템플릿 상태"]
-        FINAL["최종 생성 요청<br/>CLI · document_api · compose"]
+        FINAL["최종 생성 요청<br/>CLI · document_api"]
         QA["후보 제작·QA<br/>qa_hwpx_template.py"]
         CONTEXT["RenderExecutionContext<br/>요청자·UTC 요청 시각"]
 
@@ -102,7 +102,7 @@ flowchart LR
 
         TABLE{"table_cell 입력 있음?"}
         HWP["출력 HWPX를 hwp-skill에 전달<br/>table cell 치환"]
-        FWSPACE["필요한 leading fwSpace 복원"]
+        FWSPACE["표 셀 leading fwSpace·원본 hp:t 복원<br/>hwp-skill 출력을 확정하기 전<br/>원본 패키지를 기준본으로 사용"]
 
         LAYOUTCHECK["_validate_rendered_layout()<br/>verify_recorded_layout()"]
         PREVIEW{"package_metadata 있음?"}
