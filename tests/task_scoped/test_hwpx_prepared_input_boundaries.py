@@ -20,7 +20,7 @@ TEMPLATE_DIR = (
     ROOT / "templates" / "institutions" / "금융감독원" / "금감원 원장보고"
 )
 CANDIDATE_TEMPLATE_DIR = (
-    ROOT / "templates" / "institutions" / "금융감독원" / "금감원 원페이지"
+    ROOT / "templates" / "institutions" / "금융감독원" / "금감원 원장보고 가상자산"
 )
 CONTENT_PATH = (
     ROOT
@@ -125,7 +125,7 @@ def test_approved_template_cli_rejects_candidate(
             "--institution",
             "금융감독원",
             "--document-type",
-            "금감원 원페이지",
+            "금감원 원장보고 가상자산 이상거래",
             "--content",
             str(CANDIDATE_TEMPLATE_DIR / "content.sample.json"),
             "--output",

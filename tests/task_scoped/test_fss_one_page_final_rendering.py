@@ -52,7 +52,7 @@ def test_one_page_prepares_human_input_into_template_metadata(
     template = json.loads(
         (ONE_PAGE_DIR / "template.json").read_text(encoding="utf-8")
     )
-    assert template["status"] == "candidate"
+    assert template["status"] == "approved"
     monkeypatch.setattr(document_service, "_TEMPLATE_ROOT", _approved_one_page_root(tmp_path))
     prepared = validate_template_content(
         "금융감독원",

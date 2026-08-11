@@ -42,7 +42,7 @@ def test_document_api_lists_only_approved_hwpx_templates() -> None:
     template_ids = {candidate.identity.template_id for candidate in approved}
 
     assert "fss_director_report" in template_ids
-    assert "fss_one_page" not in template_ids
+    assert "fss_one_page" in template_ids
     assert "fss_virtual_asset_report" not in template_ids
     assert all(candidate.status == "approved" for candidate in approved)
     assert all(candidate.reference_format == "hwpx" for candidate in approved)
