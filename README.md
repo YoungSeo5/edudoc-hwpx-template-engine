@@ -111,6 +111,21 @@ macOS/Linux Bash:
 
 승인 템플릿은 `template_id`와 metadata 계약을 가진 입력으로 렌더합니다.
 
+`content.json`은 최상위에 `template_id`와 `fields` 두 키를 요구합니다(`load_template_content`).
+`template_id`가 승인 템플릿의 값과 다르면 `template_id mismatch`로 렌더를 거부합니다.
+
+```json
+{
+  "template_id": "<승인 템플릿의 template_id>",
+  "fields": {
+    "<사람용 별칭 또는 field_id>": "<값>"
+  }
+}
+```
+
+`fields`의 키로 무엇을 쓸 수 있는지는 그 템플릿의 `alias_map.json`이 정합니다. alias 계약이
+있으면 사람용 별칭으로 쓰고, 없는 후보는 `field_id`를 그대로 씁니다.
+
 Windows PowerShell:
 
 ```powershell
@@ -132,6 +147,60 @@ macOS/Linux Bash:
 성공 JSON의 `missing_fields`, `leftover_placeholders`를 함께 확인하고, Python API를
 직접 호출했다면 `RenderResult.unknown_keys`도 확인해야 합니다.
 strict 패키지 검증 통과만으로 시각적 충실도나 기관 승인을 뜻하지 않습니다.
+
+## Python API로 호출하기
+
+CLI 대신 라이브러리로 쓸 때의 공개 진입점은 `core.document_api`의 네 함수뿐입니다.
+저장소 루트가 `sys.path`에 있어야 하고, `templates/institutions/` submodule이 없으면
+승인 템플릿을 찾지 못해 `HwpxTemplateRenderError`가 납니다.
+
+```python
+from datetime import datetime, timezone
+from pathlib import Path
+
+from core.adapters.hwpx_template_input import RenderExecutionContext
+from core.document_api import (
+    get_template_contract,
+    list_approved_templates,
+    render_approved_document,
+    validate_template_content,
+)
+
+# 등록된 승인 템플릿 목록 (reference_format == "hwpx" 인 것만)
+for candidate in list_approved_templates():
+    identity = candidate.identity  # institution·document_type·template_id는 여기 있다
+    print(identity.institution, identity.document_type, identity.template_id)
+
+# 채워야 할 field와 사람용 별칭 계약. alias_map이 없으면 두 번째 값은 None
+placeholder_map, alias_map = get_template_contract("<기관명>", "<문서유형>")
+
+# requested_at은 반드시 UTC. 아니면 HwpxTemplateRenderError
+context = RenderExecutionContext(
+    requester_name="<요청자>",
+    requested_at=datetime.now(timezone.utc),
+)
+
+content = {"<사람용 별칭 또는 field_id>": "<값>"}
+
+# 파일을 쓰지 않고 입력만 검사한다
+prepared = validate_template_content("<기관명>", "<문서유형>", content, context)
+
+result = render_approved_document(
+    "<기관명>", "<문서유형>", content, Path("sandbox/<출력>.hwpx"), context
+)
+```
+
+`render_approved_document`가 돌려주는 `RenderResult`는 예외가 없어도 문제를 담고 있을 수
+있습니다. 아래 셋을 직접 확인해야 합니다.
+
+| 필드 | 뜻 |
+|---|---|
+| `missing_fields` | 템플릿이 요구했으나 입력에 없던 field |
+| `leftover_placeholders` | 치환되지 않고 출력에 남은 `{{...}}` |
+| `unknown_keys` | 입력에 있었으나 템플릿이 쓰지 않은 키 (CLI JSON에는 나오지 않음) |
+
+Python API 인자의 `content`는 CLI `content.json`의 `fields` 객체에 해당합니다.
+`template_id`는 인자로 받지 않고 기관·문서유형으로 승인 템플릿을 찾습니다.
 
 ## 검증
 
