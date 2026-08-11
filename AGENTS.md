@@ -26,6 +26,13 @@ short; durable architecture belongs in `docs/`.
 - 파일 형식에서 문서 정책이나 템플릿 정체성을 추론하지 않는다.
 - 렌더러, 템플릿, 프로파일을 조용히 다른 것으로 대체하거나 일반 `md2hwpx`
   경로로 폴백하지 않는다.
+- 사용자나 프로젝트 정책이 고정한 경로, 렌더러, 템플릿, 실행 명령은 하드 제약이다.
+- 고정 경로가 실패하면 정확한 실패를 보고하고, 다른 경로·임시 디렉터리·실행 환경으로
+  우회하지 않는다.
+- pytest 임시 파일, 후보 QA 출력, staging 산출물을 저장소 루트에 만들지 않는다.
+- pytest와 QA 임시 산출물은 `sandbox/`만 사용한다. 이 경로가 없거나 쓸 수 없으면
+  대체 경로를 만들지 말고 중단한다.
+- 승인되지 않은 우회 경로로 얻은 결과는 구현·검증 근거가 아니다.
 - `skills/hwp-skill/` 하위를 수정하지 않는다. 별도 저장소의 submodule이다.
 - `templates/institutions/` 하위 템플릿 데이터를 임의로 수정하지 않는다.
   별도 비공개 저장소의 submodule이다.
@@ -45,9 +52,18 @@ short; durable architecture belongs in `docs/`.
 | `templates/institutions/` | 기관 템플릿 데이터 (비공개 저장소) | 승인 템플릿을 찾을 수 없다 |
 | `skills/hwp-skill/` | `table_cell` 필드 치환을 위임하는 스킬 | 해당 필드를 가진 템플릿 렌더가 실패한다 |
 
+Windows PowerShell:
+
+```powershell
+git submodule update --init --recursive
+.\.venv\Scripts\python.exe -m pip install -r requirements-dev.txt
+```
+
+macOS/Linux Bash:
+
 ```bash
 git submodule update --init --recursive
-pip install -r requirements.txt
+./.venv/bin/python -m pip install -r requirements-dev.txt
 ```
 
 ## Implementation scope
@@ -73,32 +89,59 @@ pip install -r requirements.txt
   정의한 의미·구조 검사를 통과해야 한다.
 - strict 검증 통과는 시각적 충실도나 기관 승인을 뜻하지 않는다.
 
-### 알려진 기존 실패
+### 해결된 회귀
 
 `tests/task_scoped/test_fss_one_page_final_rendering.py::test_one_page_restores_table_cell_leading_fwspaces_after_skill_fill`
-는 현재 실패한다. 이 저장소를 분리하기 전 edudoc에서도 동일하게 실패하던 미해결
-이슈이며, 새로 만든 문제가 아니다. 이 테스트를 통과시키려고 기대값을 바꾸지 않는다.
+와 같은 셀의 여러 text node를 함께 검증하는 작업 전용 테스트는 2026-08-11의
+`text_node_index` 단위 복원 수정으로 통과한다. 회귀 시 기대값을 바꾸지 말고 렌더러를 고친다.
 
 ## Commands
 
-```bash
+Windows PowerShell:
+
+```powershell
 git submodule update --init --recursive
-pip install -r requirements.txt
+.\.venv\Scripts\python.exe -m pip install -r requirements-dev.txt
 
 # 승인 템플릿으로 문서 생성
-python scripts/templates/render_hwpx_template.py \
-  --institution <기관명> --document-type <문서유형> \
+.\.venv\Scripts\python.exe scripts/templates/render_hwpx_template.py `
+  --institution <기관명> --document-type <문서유형> `
   --content <content.json> --output <출력.hwpx> --requester-name <요청자>
 
 # 새 원본에서 후보 추출 + QA 왕복 검증
-python scripts/templates/qa_hwpx_template.py \
-  --source <원본.hwpx> --output-dir <후보 폴더> \
+.\.venv\Scripts\python.exe scripts/templates/qa_hwpx_template.py `
+  --source <원본.hwpx> --output-dir <후보 폴더> `
   --institution <기관명> --document-type <문서유형>
 
 # 사람이 승인한 후보 등록
-python scripts/templates/register_hwpx_template.py --candidate <후보 폴더> --approve
+.\.venv\Scripts\python.exe scripts/templates/register_hwpx_template.py --candidate <후보 폴더> --approve
 
-python -m pytest tests/ -q
+.\.venv\Scripts\python.exe -m pytest tests/ -q --basetemp=sandbox/pytest
+```
+
+macOS/Linux Bash:
+
+```bash
+git submodule update --init --recursive
+./.venv/bin/python -m pip install -r requirements-dev.txt
+
+./.venv/bin/python scripts/templates/render_hwpx_template.py \
+  --institution <기관명> --document-type <문서유형> \
+  --content <content.json> --output <출력.hwpx> --requester-name <요청자>
+
+./.venv/bin/python scripts/templates/qa_hwpx_template.py \
+  --source <원본.hwpx> --output-dir <후보 폴더> \
+  --institution <기관명> --document-type <문서유형>
+
+./.venv/bin/python scripts/templates/register_hwpx_template.py --candidate <후보 폴더> --approve
+./.venv/bin/python -m pytest tests/ -q --basetemp=sandbox/pytest
+```
+
+CI는 설치 Python을 3.13으로 고정한 뒤 운영체제별 venv 경로 대신 다음을 사용한다.
+
+```bash
+python -m pip install -r requirements-dev.txt
+python -m pytest tests/ -q --basetemp=sandbox/pytest
 ```
 
 ## Documentation changes
