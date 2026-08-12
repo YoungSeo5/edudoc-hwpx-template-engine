@@ -10,6 +10,7 @@
 | 스크립트 | 역할 |
 |---|---|
 | `render_hwpx_template.py` | 승인 템플릿에 `content.json`을 채워 HWPX 생성. 승인 템플릿이 없거나 `template_id`가 다르면 거부한다 |
+| `render_hwpx_template_from_source.py` | 승인 템플릿에 source 파일(`.md`/`.txt`/`.hwpx`)을 매핑해 HWPX 생성. 결정적 필드(날짜·제목·부서·연락처)만 추출하고, 판단이 필요한 필드가 하나라도 미해결이면 렌더를 거부한다 |
 | `qa_hwpx_template.py` | 원본 HWPX를 후보로 분리하고 sample/test 왕복 출력을 strict 검증. `template.json`을 `candidate` 상태로 남긴다 |
 | `register_hwpx_template.py` | 사람이 승인한 후보를 정식 경로에 등록. `--approve`가 사용자의 명시적 승인 의사다 |
 

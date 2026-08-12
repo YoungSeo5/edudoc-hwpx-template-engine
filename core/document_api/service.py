@@ -5,6 +5,8 @@ from pathlib import Path
 from typing import Final
 
 from core.adapters.hwpx_alias_map import AliasMap, JsonValue, load_alias_map
+from core.adapters.hwpx_source_content_mapper import map_source_to_content
+from core.adapters.hwpx_source_input import read_source_as_markdown
 from core.adapters.hwpx_template_input import (
     PreparedRenderContent,
     RenderExecutionContext,
@@ -22,6 +24,23 @@ from core.templates.registry import TemplateRegistry
 _TEMPLATE_ROOT: Final = (
     Path(__file__).resolve().parents[2] / "templates" / "institutions"
 )
+
+
+class HwpxUnresolvedFieldsError(HwpxTemplateRenderError):
+    """Raised when source mapping leaves fields unresolved.
+
+    A field the deterministic source mapper could not fill stays ``확인 필요``
+    (see ``core.adapters.hwpx_source_content_mapper``). Rendering that value
+    into a final approved-template document would silently ship a placeholder
+    as if it were real content, so final render is refused here instead.
+    """
+
+    def __init__(self, unresolved_fields: list[str]) -> None:
+        self.unresolved_fields = unresolved_fields
+        super().__init__(
+            "source mapping left unresolved fields; refusing final render: "
+            f"{unresolved_fields}"
+        )
 
 
 def list_approved_templates() -> tuple[TemplateCandidate, ...]:
@@ -85,6 +104,35 @@ def render_approved_document(
         content,
         output_path,
         execution_context=execution_context,
+    )
+
+
+def render_document_from_source(
+    institution: str,
+    document_type: str,
+    source_path: Path | str,
+    output_path: Path,
+    execution_context: RenderExecutionContext,
+) -> RenderResult:
+    """Render an approved document from a source content file (.md/.txt/.hwpx).
+
+    Reads ``source_path`` as Markdown, maps it onto the approved template's
+    ``placeholder_map.json`` (with ``alias_map.json`` when declared), and
+    refuses to render if any field is left unresolved
+    (``HwpxUnresolvedFieldsError``). This is stricter than
+    ``render_approved_document``, which renders whatever content it is given.
+    """
+    placeholder_map, alias_map = get_template_contract(institution, document_type)
+    markdown = read_source_as_markdown(source_path)
+    mapping = map_source_to_content(markdown, placeholder_map, alias_map)
+    if mapping.unresolved_fields:
+        raise HwpxUnresolvedFieldsError(mapping.unresolved_fields)
+    return render_approved_document(
+        institution,
+        document_type,
+        mapping.content,
+        output_path,
+        execution_context,
     )
 
 
