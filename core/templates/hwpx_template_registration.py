@@ -132,6 +132,16 @@ def _validate_candidate(source: Path) -> dict[str, str]:
             f"got status={candidate.status!r}"
         )
 
+    # semantic 메타데이터가 있는 후보만 확인한다. semantic 메타데이터가 없는
+    # legacy 후보는 기존 검증만 적용해 하위 호환을 유지한다.
+    semantic_status = candidate.content_separation.get("semantic_status")
+    if semantic_status is not None and semantic_status != "resolved":
+        raise TemplateRegistrationError(
+            "candidate has unresolved semantic ambiguity "
+            f"(content_separation.semantic_status={semantic_status!r}); "
+            "resolve every AMBIGUOUS decision before registration"
+        )
+
     values = {}
     for name in ("institution", "document_type", "template_id"):
         value = getattr(candidate.identity, name)

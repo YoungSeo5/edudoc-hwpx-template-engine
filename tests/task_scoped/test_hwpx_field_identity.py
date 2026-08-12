@@ -17,9 +17,11 @@ from pathlib import Path
 import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
+sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from core.templates.registry import TemplateRegistry
-from scripts.templates import qa_hwpx_template
+from _semantic_rules_helpers import write_content_rules_for_ambiguous_nodes  # noqa: E402
+from core.templates.registry import TemplateRegistry  # noqa: E402
+from scripts.templates import qa_hwpx_template  # noqa: E402
 
 ROOT = Path(__file__).resolve().parents[2]
 ONE_PAGE = ROOT / "templates" / "institutions" / "금융감독원" / "금감원 원페이지"
@@ -77,6 +79,48 @@ def test_bound_field_pointing_at_other_text_is_rejected(tmp_path: Path) -> None:
     assert "(맑은고딕 15pt)" in str(error.value)
 
 
+def test_bound_field_drift_error_includes_semantic_role_evidence(tmp_path: Path) -> None:
+    """Todo7: 드리프트 오류에 후보 field의 semantic_role 근거를 덧붙인다."""
+    root = _registry_with(
+        tmp_path,
+        [_field("content_12", "content", "(맑은고딕 15pt)")],
+        {"template_id": "demo", "fields": {"진행상황 핵심": "content_12"}},
+    )
+    drifted = _field("content_12", "content", "휴먼명조 15pt")
+    drifted["semantic_role"] = "marker_content"
+    candidate = _candidate_with(tmp_path, [drifted])
+
+    with pytest.raises(ValueError) as error:
+        TemplateRegistry(root).verify_candidate_field_identity("기관", "문서", candidate)
+
+    assert "[semantic_role=marker_content]" in str(error.value)
+
+
+def test_unbound_field_drift_is_reported_without_raising(tmp_path: Path) -> None:
+    """Todo7: 묶이지 않은 field의 드리프트는 실패시키지 않고 검토 근거로만 남긴다."""
+    root = _registry_with(
+        tmp_path,
+        [
+            _field("content_01", "content", "묶인 본문"),
+            _field("content_02", "content", "묶이지 않은 본문"),
+        ],
+        {"template_id": "demo", "fields": {"본문": "content_01"}},
+    )
+    candidate = _candidate_with(
+        tmp_path,
+        [
+            _field("content_01", "content", "묶인 본문"),
+            _field("content_02", "content", "다른 본문으로 바뀜"),
+        ],
+    )
+
+    report = TemplateRegistry(root).verify_candidate_field_identity("기관", "문서", candidate)
+
+    assert report["checked"] is True
+    assert len(report["unbound_drift"]) == 1
+    assert "content_02" in report["unbound_drift"][0]
+
+
 def test_bound_field_missing_from_the_candidate_is_rejected(tmp_path: Path) -> None:
     root = _registry_with(
         tmp_path,
@@ -117,6 +161,9 @@ def test_unbound_fields_may_be_renumbered_freely(tmp_path: Path) -> None:
         "checked": True,
         "compared_with": str((root / "기관" / "문서")),
         "bound_field_count": 1,
+        "unbound_drift": [
+            "content_02: ('content', '안 묶인 본문') -> ('content', '완전히 다른 본문')"
+        ],
     }
 
 
@@ -125,6 +172,9 @@ def test_qa_rejects_a_reextraction_that_renumbers_bound_fields(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
     """실제 사례: 금감원 원페이지를 지금 separator로 다시 뽑으면 순번이 재배치된다."""
+    rules = write_content_rules_for_ambiguous_nodes(
+        ONE_PAGE / "source.hwpx", tmp_path / "rules.json"
+    )
     exit_code = qa_hwpx_template.main(
         [
             "--source",
@@ -137,6 +187,8 @@ def test_qa_rejects_a_reextraction_that_renumbers_bound_fields(
             "금감원 원페이지",
             "--template-id",
             "fss_one_page",
+            "--rules",
+            str(rules),
         ]
     )
 
@@ -157,6 +209,9 @@ def test_qa_checks_registered_identity_outside_repository_cwd(
     outside_cwd = tmp_path / "outside-repository"
     outside_cwd.mkdir()
     monkeypatch.chdir(outside_cwd)
+    rules = write_content_rules_for_ambiguous_nodes(
+        ONE_PAGE / "source.hwpx", tmp_path / "rules.json"
+    )
 
     exit_code = qa_hwpx_template.main(
         [
@@ -170,6 +225,8 @@ def test_qa_checks_registered_identity_outside_repository_cwd(
             "금감원 원페이지",
             "--template-id",
             "fss_one_page",
+            "--rules",
+            str(rules),
         ]
     )
 
@@ -184,6 +241,9 @@ def test_qa_reports_when_there_is_nothing_to_compare_against(
     tmp_path: Path,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
+    rules = write_content_rules_for_ambiguous_nodes(
+        DIRECTOR_REPORT / "source.hwpx", tmp_path / "rules.json"
+    )
     qa_hwpx_template.main(
         [
             "--source",
@@ -196,6 +256,8 @@ def test_qa_reports_when_there_is_nothing_to_compare_against(
             "등록되지 않은 문서유형",
             "--template-id",
             "fss_unregistered_demo",
+            "--rules",
+            str(rules),
         ]
     )
 

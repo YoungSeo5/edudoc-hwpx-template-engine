@@ -41,7 +41,11 @@ re-extraction.
    `scripts/templates/qa_hwpx_template.py` in a new ignored
    `sandbox/template-candidates/` directory. Omit `--template-id` unless the
    user explicitly supplied one; the command derives a stable ASCII-safe ID
-   from the institution, document type, and source contents.
+   from the institution, document type, and source contents. Separation
+   classifies the whole document before writing any placeholder; if any text
+   node remains `AMBIGUOUS`, the command exits 1 with `error_code
+   "semantic_ambiguity"` and no placeholder map, sample content, or roundtrip
+   output is produced (see Semantic classification below).
 6. If the user explicitly requests re-extraction, create a separate candidate
    without modifying the approved template.
 7. Convert legacy HWP to HWPX before candidate QA.
@@ -60,6 +64,32 @@ Placeholder layout is recorded as `layout-context-v1` and checked by the shared
 `verify_recorded_layout()` boundary during separation, QA round-trip, and final
 rendering. The implemented contract is documented in
 [HWPX 레이아웃 보존 계약](hwpx-layout-context.md).
+
+## Semantic classification
+
+Before `separate_hwpx_template_content()` patches any XML, it classifies every
+`<hp:t>` text node from document-level structural evidence
+(`core/templates/hwpx_structural_observations.py`,
+`core/templates/hwpx_semantic_classifier.py`) into one deterministic role:
+`FIXED`, `CONTENT`, `MARKER_CONTENT`, or `AMBIGUOUS`. A leading symbol span
+(e.g. `- 부제 -`, `* 설명`) is boundary evidence only; it becomes
+`MARKER_CONTENT` solely when independent content evidence resolves it, and
+never from position or symbol presence alone. The full decision set for the
+document is written to `semantic_classification.json` before any placeholder
+is written.
+
+If any node remains `AMBIGUOUS`, separation stops before creating
+`placeholder_map.json`, `content.sample.json`, or roundtrip output. The
+candidate directory keeps only `source.hwpx`, `raw/`, the unpatched
+`template/` copies, `template.review.md`, and `semantic_classification.json`.
+`qa_hwpx_template.py` reports this as `error_code: "semantic_ambiguity"` with
+the unresolved node list and a resolution skeleton, and exits 1. A human
+completes that skeleton and passes it back via `--rules` to resolve the
+remaining nodes on a later run; deterministic decisions already made cannot
+be overridden.
+
+Only nodes resolved as `CONTENT` or `MARKER_CONTENT` become placeholders;
+`FIXED` text stays literal even when it carries a marker span.
 
 ## Repeat boundary
 

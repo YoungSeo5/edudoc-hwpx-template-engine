@@ -4,7 +4,10 @@ import json
 from dataclasses import dataclass
 from enum import StrEnum
 from pathlib import Path
-from typing import TypeAlias
+from typing import TYPE_CHECKING, TypeAlias, assert_never
+
+if TYPE_CHECKING:
+    from .hwpx_semantic_contract import SemanticRole
 
 
 JsonScalar: TypeAlias = str | int | float | bool | None
@@ -63,6 +66,33 @@ class SeparationRules:
             raise SeparationRuleError(Path(location.section), "conflicting location rules")
         return next(iter(matched), None)
 
+    def semantic_role_for(
+        self, location: TextLocation
+    ) -> tuple[SemanticRole | None, tuple[str, ...]]:
+        from .hwpx_semantic_contract import SemanticRole
+
+        matched = {rule.role for rule in self.rules if rule.matches(location)}
+        if not matched:
+            return None, ()
+        semantic_roles: set[SemanticRole] = set()
+        reasons: list[str] = []
+        for role in sorted(matched, key=lambda item: item.value):
+            match role:
+                case TextRole.CONTENT:
+                    semantic_roles.add(SemanticRole.CONTENT)
+                    reasons.append("legacy_override_content")
+                case TextRole.FIXED_LABEL:
+                    semantic_roles.add(SemanticRole.FIXED)
+                    reasons.append("legacy_override_fixed_label")
+                case TextRole.FIXED_TEXT:
+                    semantic_roles.add(SemanticRole.FIXED)
+                    reasons.append("legacy_override_fixed_text")
+                case unreachable:
+                    assert_never(unreachable)
+        if len(semantic_roles) > 1:
+            return SemanticRole.AMBIGUOUS, tuple(sorted(reasons))
+        return next(iter(semantic_roles)), tuple(sorted(reasons))
+
 
 def load_separation_rules(path: Path | str | None) -> SeparationRules:
     if path is None:
@@ -71,7 +101,9 @@ def load_separation_rules(path: Path | str | None) -> SeparationRules:
     raw: JsonValue = json.loads(source.read_text(encoding="utf-8"))
     if not isinstance(raw, dict):
         raise SeparationRuleError(source, "root must be an object")
-    items = raw.get("rules")
+    # "resolutions"만 있는 파일(사람이 AMBIGUOUS를 해소하려고 작성한 rules
+    # 파일)도 읽을 수 있도록 "rules"는 생략 가능한 키로 남긴다.
+    items = raw.get("rules", [])
     if not isinstance(items, list):
         raise SeparationRuleError(source, "rules must be a list")
     return SeparationRules(tuple(_parse_rule(source, item) for item in items))

@@ -31,6 +31,7 @@ def _make_candidate(
     template_id: str = "ulsan_legislative_notice",
     status: str = "candidate",
     omit_reference_path: bool = False,
+    content_separation: dict | None = None,
 ) -> Path:
     """분리 단계가 남기는 후보 폴더의 최소 형태를 만든다."""
     (path / "raw").mkdir(parents=True)
@@ -54,6 +55,8 @@ def _make_candidate(
         "reference_format": "hwpx",
         "status": status,
     }
+    if content_separation is not None:
+        data["content_separation"] = content_separation
     if not omit_reference_path:
         data["reference_path"] = "reference.hwpx"
     (path / "template.json").write_text(
@@ -182,6 +185,58 @@ def test_already_approved_candidate_stops_registration(tmp_path: Path) -> None:
         )
 
     assert not registry_root.exists()
+
+
+# --- Todo9: semantic 상태 등록 게이트 ---
+
+
+def test_unresolved_semantic_candidate_is_rejected_before_copying(tmp_path: Path) -> None:
+    candidate = _make_candidate(
+        tmp_path / "ulsan",
+        content_separation={"status": "candidate", "semantic_status": "ambiguous"},
+    )
+    registry_root = tmp_path / "institutions"
+
+    with pytest.raises(TemplateRegistrationError, match="unresolved semantic ambiguity"):
+        register_hwpx_template_candidate(
+            candidate,
+            registry_root=registry_root,
+            approve=True,
+        )
+
+    assert candidate.is_dir()
+    assert not registry_root.exists()
+
+
+def test_resolved_semantic_candidate_reaches_existing_checks(tmp_path: Path) -> None:
+    candidate = _make_candidate(
+        tmp_path / "ulsan",
+        content_separation={"status": "candidate", "semantic_status": "resolved"},
+    )
+    registry_root = tmp_path / "institutions"
+
+    result = register_hwpx_template_candidate(
+        candidate,
+        registry_root=registry_root,
+        approve=True,
+    )
+
+    assert result.template_id == "ulsan_legislative_notice"
+
+
+def test_legacy_candidate_without_semantic_metadata_keeps_current_behavior(
+    tmp_path: Path,
+) -> None:
+    candidate = _make_candidate(tmp_path / "ulsan")  # no content_separation at all
+    registry_root = tmp_path / "institutions"
+
+    result = register_hwpx_template_candidate(
+        candidate,
+        registry_root=registry_root,
+        approve=True,
+    )
+
+    assert result.template_id == "ulsan_legislative_notice"
 
 
 # --- 리뷰 후속: 되돌릴 수 없는 단계 전에 걸러야 하는 것들 ---

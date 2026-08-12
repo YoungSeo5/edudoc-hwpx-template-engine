@@ -8,7 +8,7 @@
 
 ## 검증 상태
 
-2026-08-11에 아래 소스와 한 줄씩 대조하여 정확성을 확인했다. 이후 파이프라인이
+2026-08-12에 아래 소스와 한 줄씩 대조하여 정확성을 확인했다. 이후 파이프라인이
 바뀌면 이 다이어그램은 자동으로 갱신되지 않으므로, 관련 코드를 바꿀 때 함께
 갱신하거나 최소한 정확성을 재확인해야 한다.
 
@@ -19,6 +19,8 @@
   `_render_filled_package()`
 - `core/adapters/hwpx_alias_map.py` — `flatten_content()`, `resolve_flattened()`
 - `core/templates/registry.py` — `TemplateRegistry.find()`
+- `core/templates/hwpx_content_separator.py` — `separate_hwpx_template_content()`
+- `core/templates/hwpx_semantic_classifier.py` — `classify_document_semantics()`
 - `scripts/templates/qa_hwpx_template.py`
 
 ## 다이어그램
@@ -36,8 +38,14 @@ flowchart LR
         DIRECTOR["원장보고<br/>approved"]
         ONEPAGE["원페이지<br/>candidate<br/>alias·metadata 계약은 존재"]
 
+        SEPARATE["separate_hwpx_template_content()<br/>구조 추출 → 문서 전체 semantic 분류<br/>FIXED·CONTENT·MARKER_CONTENT·AMBIGUOUS"]
+        AMBIGCHECK{"AMBIGUOUS 남음?"}
+        AMBIGSTOP["semantic_classification.json만 남기고 정지<br/>error_code=semantic_ambiguity, exit 1<br/>placeholder_map·content.sample·roundtrip 생성 안 함"]
+
         FINAL --> PRODREG
-        QA --> QAREG
+        QA --> SEPARATE --> AMBIGCHECK
+        AMBIGCHECK -- 예 --> AMBIGSTOP
+        AMBIGCHECK -- 아니오 --> QAREG
         DIRECTOR --> PRODREG
         ONEPAGE -. 운영 조회 불가 .-> PRODREG
         CONTEXT --> FINAL
@@ -71,7 +79,7 @@ flowchart LR
         FINALRENDER["render_prepared_hwpx_template()"]
 
         FINAL --> FINALWRAP --> RESOLVE
-        QA --> QAWRAP --> RESOLVE
+        QAREG --> QAWRAP --> RESOLVE
         ALIAS --> RESOLVE
         PMAP --> RESOLVE
 

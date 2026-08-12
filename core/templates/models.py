@@ -75,6 +75,7 @@ class TemplateCandidate:
     assets: dict[str, Any] = field(default_factory=dict)
     package_summary: dict[str, Any] = field(default_factory=dict)
     rendering_rules: dict[str, Any] = field(default_factory=dict)
+    content_separation: dict[str, Any] = field(default_factory=dict)
     evidence: list[str] = field(default_factory=list)
     unknown_fields: list[str] = field(default_factory=list)
     diagnostics: list[TemplateDiagnostic] = field(default_factory=list)
@@ -108,6 +109,7 @@ class TemplateCandidate:
             assets=dict(data.get("assets", {})),
             package_summary=dict(data.get("package_summary", {})),
             rendering_rules=dict(data.get("rendering_rules", {})),
+            content_separation=dict(data.get("content_separation", {})),
             evidence=list(data.get("evidence", [])),
             unknown_fields=list(data.get("unknown_fields", [])),
             diagnostics=[

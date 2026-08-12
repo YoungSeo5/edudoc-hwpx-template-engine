@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import html
 import json
 import re
@@ -11,8 +12,11 @@ from typing import Any
 
 from ..adapters.hwpx_template_renderer import snapshot_source_hwpx
 from .hwpx_content_artifacts import (
+    mark_ambiguous_content_separation,
+    render_ambiguous_review,
     render_separation_review,
     update_template_content_separation,
+    write_semantic_classification,
 )
 from .hwpx_content_classifier import (
     COMMON_RULE_DESCRIPTIONS,
@@ -30,6 +34,13 @@ from .hwpx_layout_context import (
     verify_recorded_layout,
 )
 from .hwpx_package_extractor import HwpxExtractionResult, extract_hwpx_template
+from .hwpx_semantic_classifier import SemanticAmbiguityError, classify_document_semantics
+from .hwpx_semantic_contract import SemanticNodeDecision, SemanticRole
+from .hwpx_semantic_placeholder_projection import (
+    patch_marker_content_span,
+    require_fully_resolved,
+)
+from .hwpx_semantic_resolutions import apply_resolutions, load_resolutions, unresolved_skeleton
 from .hwpx_separation_rules import (
     SeparationRules,
     TextRole,
@@ -50,7 +61,7 @@ _T_NODE_RE = re.compile(
     re.S,
 )
 _LEADING_FWSPACE_RE = re.compile(
-    r"^(?P<prefix>(?:\s*<(?:[A-Za-z_][\w.-]*:)?fwSpace\b[^>]*/>)+)"
+    r"^(?P<prefix>(?:(?:\s*<(?:[A-Za-z_][\w.-]*:)?fwSpace\b[^>]*/>)| )+)"
 )
 _TRAILING_FWSPACE_RE = re.compile(
     r"(?P<suffix>(?:<(?:[A-Za-z_][\w.-]*:)?fwSpace\b[^>]*/>\s*)+)$"
@@ -94,6 +105,30 @@ def separate_hwpx_template_content(
     # raw/에는 분석 대상으로 선택한 일부 자산만 들어있고, hwpx 패키지에 필요한 추출되지 않은 기타 자산은 source.hwpx에서 가져와야 한다.
 
     snapshot_source_hwpx(source, root)
+
+    # 흐름 3.5: XML을 패치하기 전에 문서 전체를 의미 분류로 먼저 판정하고,
+    # --rules의 "resolutions"로 넘어온 사람의 결정을 적용한다. semantic
+    # 분류 결과는 성공/실패 모두 semantic_classification.json에 남긴다.
+    # 그래도 AMBIGUOUS가 남으면 raw/와 (추출기가 만든 미패치) template/
+    # 복사본, template.review.md, semantic_classification.json만 남기고
+    # placeholder_map.json/content.sample.json/roundtrip 생성 전에 실패로
+    # 멈춘다.
+    source_sha256 = hashlib.sha256(Path(source).read_bytes()).hexdigest()
+    resolutions = load_resolutions(rules_path)
+    decisions_by_section = _classify_and_resolve_document(root, rules, resolutions)
+    all_decisions = tuple(
+        decision
+        for section_decisions in decisions_by_section.values()
+        for decision in section_decisions
+    )
+    semantic_classification = root / "semantic_classification.json"
+    write_semantic_classification(
+        semantic_classification, source_sha256=source_sha256, decisions=all_decisions
+    )
+    _reject_if_semantically_unresolved(
+        root, template_id, all_decisions, semantic_classification
+    )
+
     section_results = []
     fields: dict[str, Any] = {}
     placeholder_entries = []
@@ -111,6 +146,7 @@ def separate_hwpx_template_content(
             rules,
             field_id_counters,
             section_index,
+            decisions_by_section.get(raw_section.name, ()),
         )
 
         # CONTENT로 판정한 텍스트만 {{field_id}}로 바꾸고, FIXED 텍스트와
@@ -187,7 +223,11 @@ def separate_hwpx_template_content(
     # 흐름 6: 생성한 산출물의 상대 경로와 분리 상태를 candidate
     # template.json에 연결한다. status 자체를 approved로 바꾸지는 않는다.
     update_template_content_separation(
-        root / "template.json", content_sample, placeholder_map, review
+        root / "template.json",
+        content_sample,
+        placeholder_map,
+        review,
+        semantic_classification=semantic_classification,
     )
     return HwpxContentSeparationResult(
         output_dir=root,
@@ -205,10 +245,12 @@ def _section_decisions(
     rules: SeparationRules,
     counters: dict[str, int],
     section_index: int,
+    semantic_decisions: tuple[SemanticNodeDecision, ...] = (),
 ) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
     root = ET.fromstring(path.read_bytes())
     decisions = []
     contexts = build_text_contexts(root, path.name)
+    semantic_by_index = {item.location.text_node_index: item for item in semantic_decisions}
     table_contexts: dict[tuple[int, int, int], list[Any]] = defaultdict(list)
     for context in contexts:
         location = context.location
@@ -231,8 +273,14 @@ def _section_decisions(
             context.location.row,
             context.location.col,
         )
+        cell_is_multi_node = (
+            is_table_text
+            and None not in table_key
+            and sum(1 for item in table_contexts[table_key] if item.normalized_text) >= 2
+        )
         if (
             is_table_text
+            and not cell_is_multi_node
             and None not in table_key
             and table_key not in seen_table_cells
         ):
@@ -258,15 +306,27 @@ def _section_decisions(
                         "row": row,
                         "col": col,
                         "paragraph_index": cell_contexts[0].location.paragraph_index,
+                        **_semantic_tags(
+                            semantic_by_index.get(cell_contexts[0].location.text_node_index)
+                        ),
                     }
                 )
-        if context.normalized_text and not is_table_text:
+        node_level = not is_table_text or cell_is_multi_node
+        semantic = semantic_by_index.get(location.text_node_index)
+        # 사람이 --rules resolutions로 MARKER_CONTENT를 확정한 노드만 same-node
+        # lossless span 치환 대상이다. 그 외에는 기존 whole-node CONTENT 경로다.
+        is_marker_content = (
+            node_level and semantic is not None and semantic.role is SemanticRole.MARKER_CONTENT
+        )
+        if is_marker_content:
+            category = content_category(semantic.span.content_decoded)
+        if context.normalized_text and node_level:
             counters[category] = counters.get(category, 0) + 1
             candidate_field_id = f"{category}_{counters[category]:02d}"
         replace = (
             bool(context.normalized_text)
-            and not is_table_text
-            and role is TextRole.CONTENT
+            and node_level
+            and (role is TextRole.CONTENT or is_marker_content)
         )
         field_id = candidate_field_id if replace else None
         location = context.location
@@ -287,10 +347,19 @@ def _section_decisions(
                     "col": location.col,
                     "paragraph_index": location.paragraph_index,
                 },
+                "marker_content_decision": semantic if is_marker_content else None,
+                **_semantic_tags(semantic),
             }
         )
 
     return decisions, table_fields
+
+
+def _semantic_tags(semantic: SemanticNodeDecision | None) -> dict[str, Any]:
+    return {
+        "semantic_role": semantic.role.value if semantic else None,
+        "semantic_decision_id": semantic.decision_id if semantic else None,
+    }
 
 
 # 결정 목록을 원본 XML 문자열의 <hp:t> 순서와 맞춰 적용한다.
@@ -305,6 +374,33 @@ def _apply_decisions(xml: str, decisions: list[dict[str, Any]]) -> tuple[str, li
         decision = decisions[text_index] if text_index < len(decisions) else None
         if match.group(1):
             parts.append(match.group(1))
+        elif decision and decision["replace"] and decision.get("marker_content_decision"):
+            # 사람이 확정한 MARKER_CONTENT: 표식은 그대로 두고 content span만
+            # placeholder로 바꾸는 lossless 패처를 쓴다.
+            semantic_decision = decision["marker_content_decision"]
+            patched_body = patch_marker_content_span(
+                match.group("body") or "", semantic_decision, decision["placeholder"]
+            )
+            parts.append(match.group(4))
+            parts.append(patched_body)
+            parts.append(match.group(8))
+            applied.append(
+                {
+                    "field_id": decision["field_id"],
+                    "placeholder": decision["placeholder"],
+                    "sample_value": semantic_decision.span.content_decoded,
+                    "category": decision["category"],
+                    "replacement_mode": "hp_t_text_marker_span",
+                    "section": decision["location"]["section"],
+                    "text_node_index": decision["text_node_index"],
+                    "table": decision["location"].get("table"),
+                    "row": decision["location"].get("row"),
+                    "col": decision["location"].get("col"),
+                    "paragraph_index": decision["location"].get("paragraph_index"),
+                    "semantic_role": decision["semantic_role"],
+                    "semantic_decision_id": decision["semantic_decision_id"],
+                }
+            )
         elif decision and decision["replace"]:
             placeholder = html.escape(decision["placeholder"], quote=False)
             leading, trailing = _edge_fwspace_xml(match.group("body") or "")
@@ -326,6 +422,8 @@ def _apply_decisions(xml: str, decisions: list[dict[str, Any]]) -> tuple[str, li
                     "row": decision["location"].get("row"),
                     "col": decision["location"].get("col"),
                     "paragraph_index": decision["location"].get("paragraph_index"),
+                    "semantic_role": decision["semantic_role"],
+                    "semantic_decision_id": decision["semantic_decision_id"],
                 }
             )
         else:
@@ -360,10 +458,10 @@ def _table_cell_is_content(
     first = contexts[0]
     row = first.location.row
     col = first.location.col
-    rows = first.table_rows or 0
+    rows, cols = first.table_rows or 0, first.table_cols or 0
     if row is None or col is None:
         return False
-    if rows <= 1:
+    if rows <= 1 or cols <= 1:
         return any(classify_text(context, rules) is TextRole.CONTENT for context in contexts)
     if row == 0:
         return _looks_like_table_header_value(_table_cell_sample_value(contexts))
@@ -445,6 +543,59 @@ def _paragraph_count(xml: str) -> int:
 
 def _paragraphs(xml: str) -> list[ET.Element]:
     return [node for node in ET.fromstring(xml).iter() if node.tag.rsplit("}", 1)[-1] == "p"]
+
+
+def _classify_and_resolve_document(
+    root: Path,
+    rules: SeparationRules,
+    resolutions: tuple[Any, ...],
+) -> dict[str, tuple[SemanticNodeDecision, ...]]:
+    result: dict[str, tuple[SemanticNodeDecision, ...]] = {}
+    for raw_section in sorted((root / "raw").glob("section*.xml"), key=_section_sort_key):
+        section_root = ET.fromstring(raw_section.read_bytes())
+        decisions = classify_document_semantics(section_root, raw_section.name, rules)
+        result[raw_section.name] = apply_resolutions(decisions, resolutions)
+    return result
+
+
+def _reject_if_semantically_unresolved(
+    root: Path,
+    template_id: str,
+    decisions: tuple[SemanticNodeDecision, ...],
+    semantic_classification: Path,
+) -> None:
+    unresolved = [item for item in decisions if item.role is SemanticRole.AMBIGUOUS]
+    if not unresolved:
+        return
+    unresolved_report = [
+        {
+            "decision_id": item.decision_id,
+            "section": item.location.section,
+            "text_node_index": item.location.text_node_index,
+            "table": item.location.table,
+            "row": item.location.row,
+            "col": item.location.col,
+            "reason_codes": item.reason_codes,
+        }
+        for item in unresolved
+    ]
+    review = root / "template.review.md"
+    review.write_text(
+        render_ambiguous_review(template_id, unresolved_report), encoding="utf-8"
+    )
+    mark_ambiguous_content_separation(
+        root / "template.json",
+        semantic_classification=semantic_classification,
+        review=review,
+        unresolved_count=len(unresolved),
+    )
+    try:
+        require_fully_resolved(decisions)
+    except SemanticAmbiguityError as exc:
+        exc.unresolved = unresolved_report
+        exc.resolution_skeleton = unresolved_skeleton(decisions)
+        exc.semantic_classification_path = str(semantic_classification)
+        raise
 
 
 def _section_sort_key(path: Path) -> int:

@@ -19,7 +19,12 @@ from core.adapters.hwpx_template_renderer import (  # noqa: E402
 from core.templates.hwpx_content_separator import (  # noqa: E402
     separate_hwpx_template_content,
 )
+from core.templates.hwpx_semantic_classifier import SemanticAmbiguityError  # noqa: E402
 from core.templates.registry import TemplateRegistry  # noqa: E402
+
+
+class SnapshotMismatchError(ValueError):
+    """Raised when the candidate's source.hwpx snapshot no longer matches --source."""
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -110,6 +115,11 @@ def main(argv: list[str] | None = None) -> int:
 
         source_snapshot = args.output_dir / "source.hwpx"
         source_snapshot_matches = _sha256(args.source) == _sha256(source_snapshot)
+        if not source_snapshot_matches:
+            raise SnapshotMismatchError(
+                "candidate source.hwpx snapshot no longer matches --source; "
+                "re-run separation against the current source"
+            )
         report_path = args.output_dir / "qa.report.json"
         summary = {
             "ok": True,
@@ -144,6 +154,21 @@ def main(argv: list[str] | None = None) -> int:
             json.dumps(summary, ensure_ascii=False, indent=2) + "\n",
             encoding="utf-8",
         )
+    except SemanticAmbiguityError as exc:
+        failure = _base_failure_summary(args, template_id, template_id_source)
+        failure["error_code"] = "semantic_ambiguity"
+        failure["error"] = str(exc)
+        failure["unresolved_count"] = len(getattr(exc, "unresolved", []) or [])
+        failure["unresolved"] = getattr(exc, "unresolved", [])
+        failure["resolution_skeleton"] = getattr(exc, "resolution_skeleton", [])
+        _persist_and_print_failure(args.output_dir, failure)
+        return 1
+    except SnapshotMismatchError as exc:
+        failure = _base_failure_summary(args, template_id, template_id_source)
+        failure["error_code"] = "snapshot_mismatch"
+        failure["error"] = str(exc)
+        _persist_and_print_failure(args.output_dir, failure)
+        return 1
     except (
         OSError,
         ValueError,
@@ -171,6 +196,28 @@ def main(argv: list[str] | None = None) -> int:
 
     print(json.dumps(summary, ensure_ascii=False, indent=2))
     return 0
+
+
+def _base_failure_summary(
+    args: argparse.Namespace, template_id: str, template_id_source: str
+) -> dict:
+    return {
+        "ok": False,
+        "source": str(args.source),
+        "output_dir": str(args.output_dir),
+        "institution": args.institution,
+        "document_type": args.document_type,
+        "template_id": template_id,
+        "template_id_source": template_id_source,
+        "status": "candidate",
+    }
+
+
+def _persist_and_print_failure(output_dir: Path, failure: dict) -> None:
+    text = json.dumps(failure, ensure_ascii=False, indent=2)
+    if output_dir.is_dir():
+        (output_dir / "qa.report.json").write_text(text + "\n", encoding="utf-8")
+    print(text)
 
 
 def _sha256(path: Path) -> str:

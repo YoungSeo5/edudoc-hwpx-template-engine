@@ -7,6 +7,7 @@ from dataclasses import dataclass
 from typing import Final
 
 from .hwpx_separation_rules import SeparationRules, TextLocation, TextRole
+from .hwpx_structural_observations import observe_hwpx_section
 
 
 COMMON_RULE_SET: Final = "structural-v1"
@@ -41,35 +42,31 @@ class TextContext:
 
 def build_text_contexts(root: ET.Element, section: str) -> list[TextContext]:
     parents = {child: parent for parent in root.iter() for child in parent}
-    tables = _nodes(root, "tbl")
-    table_indexes = {id(table): index for index, table in enumerate(tables)}
-    paragraphs = _nodes(root, "p")
-    paragraph_indexes = {
-        id(paragraph): index for index, paragraph in enumerate(paragraphs)
-    }
+    text_nodes = _nodes(root, "t")
+    observations = observe_hwpx_section(
+        ET.tostring(root, encoding="unicode"),
+        section=section,
+        section_ordinal=0,
+    ).nodes
     contexts: list[TextContext] = []
-    for index, node in enumerate(_nodes(root, "t")):
+    for node, observation in zip(text_nodes, observations, strict=True):
         table = _nearest(node, parents, "tbl")
         cell = _nearest(node, parents, "tc")
-        paragraph = _nearest(node, parents, "p")
-        row, col = _cell_address(cell)
         location = TextLocation(
             section=section,
-            text_node_index=index,
-            table=table_indexes.get(id(table)) if table is not None else None,
-            row=row,
-            col=col,
-            paragraph_index=(
-                paragraph_indexes.get(id(paragraph)) if paragraph is not None else None
-            ),
+            text_node_index=observation.text_node_index,
+            table=observation.table_index,
+            row=observation.row,
+            col=observation.col,
+            paragraph_index=observation.paragraph_index,
         )
         contexts.append(
             TextContext(
-                original_text="".join(node.itertext()),
-                normalized_text=_normalize("".join(node.itertext())),
+                original_text=observation.original_text,
+                normalized_text=observation.normalized_text,
                 location=location,
-                table_rows=_int_attr(table, "rowCnt"),
-                table_cols=_int_attr(table, "colCnt"),
+                table_rows=observation.declared_row_count,
+                table_cols=observation.declared_column_count,
                 cell_text_count=_nonempty_text_count(cell),
                 table_nonempty_cell_count=_nonempty_cell_count(table),
                 table_has_section_marker=_table_has_section_marker(table),
@@ -169,9 +166,15 @@ def _is_table_header_or_row_label(context: TextContext) -> bool:
         return False
     rows = context.table_rows or 0
     cols = context.table_cols or 0
-    if rows >= 2 and (row == 0 or col == 0):
+    if rows >= 2 and cols >= 2 and (row == 0 or col == 0):
         return True
-    return rows == 1 and cols >= 2 and col == 0 and context.table_nonempty_cell_count >= 2
+    return (
+        rows == 1
+        and cols >= 2
+        and col == 0
+        and context.table_nonempty_cell_count >= 2
+        and content_category(context.normalized_text) == "document_title"
+    )
 
 
 def _is_short_label(text: str) -> bool:

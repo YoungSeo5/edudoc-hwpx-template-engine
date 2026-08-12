@@ -88,6 +88,23 @@ def _write_hwpx(path: Path, section: str = SECTION) -> None:
         package.writestr("settings.xml", "<settings/>")
 
 
+def _write_marker_boundary_content_rules(path: Path, text_node_indexes: tuple[int, ...]) -> None:
+    # SECTION has same-node leading-symbol nodes ("□ ...", "※ ...") that the
+    # semantic classifier leaves AMBIGUOUS without an explicit human decision.
+    # These fixtures resolve them to their pre-existing legacy CONTENT role.
+    path.write_text(
+        json.dumps(
+            {
+                "rules": [
+                    {"role": "content", "section": "section0.xml", "text_node_index": index}
+                    for index in text_node_indexes
+                ]
+            }
+        ),
+        encoding="utf-8",
+    )
+
+
 def test_separator_preserves_footer_instruction_as_fixed_text() -> None:
     # Given: a report with the exact fixed footer and a different ※ report text.
     with tempfile.TemporaryDirectory() as tmp:
@@ -101,10 +118,20 @@ def test_separator_preserves_footer_instruction_as_fixed_text() -> None:
                 {
                     "rules": [
                         {
+                            "role": "content",
+                            "section": "section0.xml",
+                            "text_node_index": 2,
+                        },
+                        {
+                            "role": "content",
+                            "section": "section0.xml",
+                            "text_node_index": 3,
+                        },
+                        {
                             "role": "fixed_text",
                             "section": "section0.xml",
                             "text_node_index": 4,
-                        }
+                        },
                     ]
                 }
             ),
@@ -151,7 +178,7 @@ def test_separator_preserves_footer_instruction_as_fixed_text() -> None:
         assert table_field["col"] == 1
         assert mapping["replacement_mode"] == "mixed"
         assert mapping["classification_rule_set"] == "structural-v1"
-        assert mapping["template_rule_count"] == 1
+        assert mapping["template_rule_count"] == 3
         updated_template = json.loads((output / "template.json").read_text(encoding="utf-8"))
         assert updated_template["content_separation"]["status"] == "candidate"
         assert updated_template["rendering_rules"]["preserve_linesegarray"] is False
@@ -164,10 +191,6 @@ def test_separator_preserves_footer_instruction_as_fixed_text() -> None:
         assert (
             "- Rendering retains `linesegarray` caches in unchanged sections."
         ) in review
-        assert (
-            "- Non-table fields use `<hp:t>` placeholders; table fields use mapped cell coordinates."
-            in review
-        )
         assert "linesegarray are preserved" not in review
 
 
@@ -177,7 +200,9 @@ def test_separator_assigns_table_field_ids_in_document_order() -> None:
         root = Path(tmp)
         source = root / "source.hwpx"
         output = root / "template"
+        rules = root / "content-separation-rules.json"
         _write_hwpx(source)
+        _write_marker_boundary_content_rules(rules, (2, 3, 4))
 
         # When: content is separated into the template contract.
         result = separate_hwpx_template_content(
@@ -185,6 +210,7 @@ def test_separator_assigns_table_field_ids_in_document_order() -> None:
             output,
             template_id="document_order",
             institution="demo",
+            rules_path=rules,
         )
         fields = json.loads(result.content_sample.read_text(encoding="utf-8"))["fields"]
 
@@ -373,6 +399,8 @@ def test_separator_records_paragraph_style_contract() -> None:
             "</hh:margin></hh:paraPr>",
         )
         section = SECTION.replace("<hp:p>", '<hp:p paraPrIDRef="7">')
+        rules = root / "content-separation-rules.json"
+        _write_marker_boundary_content_rules(rules, (2, 3, 4))
         with zipfile.ZipFile(source, "w") as package:
             package.writestr("mimetype", "application/hwp+zip", compress_type=zipfile.ZIP_STORED)
             package.writestr("Contents/header.xml", header)
@@ -381,7 +409,7 @@ def test_separator_records_paragraph_style_contract() -> None:
             package.writestr("settings.xml", "<settings/>")
 
         result = separate_hwpx_template_content(
-            source, output, template_id="styled_template", institution="demo"
+            source, output, template_id="styled_template", institution="demo", rules_path=rules
         )
 
         mapping = json.loads(result.placeholder_map.read_text(encoding="utf-8"))

@@ -2,11 +2,15 @@ from __future__ import annotations
 
 import hashlib
 import json
+import sys
 from pathlib import Path
 
 import pytest
 
-from scripts.templates import qa_hwpx_template
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+
+from _semantic_rules_helpers import write_content_rules_for_ambiguous_nodes  # noqa: E402
+from scripts.templates import qa_hwpx_template  # noqa: E402
 
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -25,6 +29,7 @@ def test_arbitrary_hwpx_creates_nonrepeat_candidate_and_strict_roundtrips(
 ) -> None:
     # Given: an HWPX that has no institution-specific alias or repeat contract.
     candidate = tmp_path / "candidate"
+    rules = write_content_rules_for_ambiguous_nodes(REFERENCE, tmp_path / "rules.json")
 
     # When: the public QA entrypoint creates a template candidate.
     exit_code = qa_hwpx_template.main(
@@ -37,6 +42,8 @@ def test_arbitrary_hwpx_creates_nonrepeat_candidate_and_strict_roundtrips(
             "테스트기관",
             "--document-type",
             "공공계획",
+            "--rules",
+            str(rules),
         ]
     )
 
@@ -73,6 +80,7 @@ def test_arbitrary_hwpx_generates_stable_template_id_in_all_artifacts(
     expected_template_id = (
         f"tpl_{hashlib.sha256(identity.encode('utf-8')).hexdigest()[:24]}"
     )
+    rules = write_content_rules_for_ambiguous_nodes(REFERENCE, tmp_path / "rules.json")
 
     # When: the public QA entrypoint creates the candidate.
     exit_code = qa_hwpx_template.main(
@@ -85,6 +93,8 @@ def test_arbitrary_hwpx_generates_stable_template_id_in_all_artifacts(
             institution,
             "--document-type",
             document_type,
+            "--rules",
+            str(rules),
         ]
     )
 
