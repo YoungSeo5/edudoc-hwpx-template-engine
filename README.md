@@ -157,9 +157,10 @@ macOS/Linux Bash:
 
 후보 생성기는 원본 패키지를 보존하면서 교체 후보와 고정 영역을 분리하고, candidate QA에 필요한 산출물을 만듭니다.
 
-여기서 중요한 점은 **자동 분류 결과가 곧 문서 의미의 승인 결과는 아니라는 것**입니다. 예를 들어 제목, 라벨, 날짜, 표의 각 셀, marker, 반복 구간은 XML 좌표만으로 의미를 확정할 수 없는 경우가 있으므로 사람이 결과를 검토해야 합니다.
+자동 분류 결과만으로 문서 의미가 확정되지는 않습니다. 제목, 라벨, 날짜, 표 셀,
+marker, 반복 구간처럼 XML 좌표만으로 의미를 판단하기 어려운 항목은 사람이 검토합니다.
 
-후보 경로의 목적은 "무조건 자동으로 완성된 템플릿을 만드는 것"이 아니라, **원본을 훼손하지 않은 상태에서 검토 가능한 candidate를 만드는 것**입니다.
+후보 생성 경로는 원본을 보존하면서 사람이 검토할 수 있는 `candidate`를 만드는 데 목적이 있습니다.
 
 ---
 
@@ -198,7 +199,7 @@ macOS/Linux Bash:
 
 반복은 구조가 비슷해 보인다는 이유만으로 자동 활성화하지 않습니다. 사람이 `blocks` 계약을 작성한 경우에만 반복 렌더링을 수행합니다.
 
-세부 렌더링·반복·레이아웃 규칙은 아래 **근거 문서**를 참고합니다.
+세부 렌더링·반복·레이아웃 규칙은 아래 **프로젝트 문서**를 참고합니다.
 
 ---
 
@@ -311,16 +312,46 @@ macOS/Linux Bash:
 
 ---
 
-## 근거 문서 / 출처
+## 프로젝트 문서
 
-이 README는 아래 저장소 내부 계약을 요약합니다. 구현과 README가 충돌할 경우 현재 코드·테스트와 아래 정책 문서를 우선 확인합니다.
+이 README는 아래 저장소 내부 계약을 요약합니다.
 
-- [`AGENTS.md`](AGENTS.md) — 프로젝트 목표, 금지사항, 테스트·문서 정책
-- [`SKILL.md`](SKILL.md) — 승인 템플릿 조회 → 최종 렌더 / candidate QA 라우팅
-- [`docs/agent-policies/hwpx-template-rendering.md`](docs/agent-policies/hwpx-template-rendering.md) — HWPX 템플릿 라우팅과 반복 계약
-- [`docs/agent-policies/hwpx-render-pipeline-diagram.md`](docs/agent-policies/hwpx-render-pipeline-diagram.md) — 실제 렌더·QA 파이프라인
-- [`docs/agent-policies/hwpx-layout-context.md`](docs/agent-policies/hwpx-layout-context.md) — 레이아웃 보존 계약
-- [`.gitmodules`](.gitmodules) — `templates/institutions`, `skills/hwp-skill` submodule 정의
-- [`requirements.txt`](requirements.txt) — 런타임 의존성
+- `AGENTS.md` — 프로젝트 목표, 금지사항, 테스트·문서 정책
+- `SKILL.md` — 승인 템플릿 조회 → 최종 렌더 / candidate QA 라우팅
+- `docs/agent-policies/hwpx-template-rendering.md` — HWPX 템플릿 라우팅과 반복 계약
+- `docs/agent-policies/hwpx-render-pipeline-diagram.md` — 실제 렌더·QA 파이프라인
+- `docs/agent-policies/hwpx-layout-context.md` — 레이아웃 보존 계약
 
-README는 운영 흐름을 빠르게 이해하기 위한 진입점입니다. 상세 스키마와 구현 규칙은 위 정책 문서를 기준으로 유지합니다.
+상세 스키마와 구현 규칙은 위 정책 문서를 기준으로 유지합니다.
+
+---
+
+## 외부 출처 및 참고 자료
+
+### 오픈소스
+
+- **[hwpx-skill](https://github.com/jkf87/hwpx-skill)**  
+  HWP/HWPX 문서 처리 기능을 제공하는 오픈소스 프로젝트로, 이 저장소의
+  `skills/hwp-skill/`과 관련된 기반 프로젝트입니다. MIT License.
+
+- **python-hwpx**  
+  HWPX 패키지 처리와 strict package validation에 사용하는 Python 라이브러리입니다.
+
+각 오픈소스의 저작권과 라이선스는 원저작자 및 해당 프로젝트에 귀속됩니다.
+
+### 예시 HWPX 자료 — 범정부오피스
+
+범정부오피스는 이 프로젝트의 오픈소스 기반 코드가 아닙니다.
+
+범정부오피스 관련 HWPX 문서는 사용자가 새로운 HWPX 파일을 제공하는 상황을 재현하여
+**신규 템플릿 후보 추출·레이아웃 보존·candidate QA 파이프라인을 검증하기 위한
+예시 입력 문서**로 활용했습니다.
+
+관련 출처는 성격에 따라 다음과 같이 구분합니다.
+
+- **행정안전부 공식 게시물** — 범정부오피스 프로그램 및 공개 자료의 공식 출처
+- **이경수 주무관 관련 언론 보도** — 개발 배경과 개발자 관련 공개 정보의 보조 출처
+- **온나라 커뮤니티** — 범정부오피스 관련 자료의 공공부문 내부 배포 경로
+
+범정부오피스의 문서 형식·문구·업무 규칙을 이 프로젝트의 범용 규칙으로 사용하거나,
+해당 프로그램의 코드 또는 내부 구현을 이 프로젝트에 포함한 것은 아닙니다.
