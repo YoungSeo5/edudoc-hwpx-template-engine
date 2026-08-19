@@ -23,3 +23,4 @@ Use honest terms:
 - smoke-tested
 - not layout-perfect
 - project-local
+- Active task contracts belong in the repository-level `docs/tasks/` directory and are governed by the root `AGENTS.md`.

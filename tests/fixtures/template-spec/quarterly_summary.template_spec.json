@@ -1,0 +1,18 @@
+{
+  "template_spec_version": "authoring-v2",
+  "heading": "3분기 요약",
+  "page": {
+    "margins_mm": {
+      "left": 20.0, "right": 20.0, "top": 15.0, "bottom": 15.0,
+      "header": 15.0, "footer": 15.0
+    }
+  },
+  "heading_style": { "align": "center", "size_pt": 18 },
+  "fields": [
+    {"label": "보도일자", "sample_value": "2026-08-14"},
+    {"label": "담당부서", "sample_value": "홍보실"},
+    {"label": "요약", "sample_value": "3분기 실적 요약 내용"}
+  ],
+  "table_style": { "width_mm": 150.0, "border_weight": "thick" },
+  "footer": { "page_number": true }
+}

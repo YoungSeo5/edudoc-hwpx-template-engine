@@ -1,0 +1,53 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "semantic-template-contract.schema.json",
+  "title": "Semantic Template Contract v1",
+  "description": "Agent-authored semantic source of truth for a template. It has no physical HWPX coordinates.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["semantic_contract_version", "template_request_id", "institution", "document_type", "elements"],
+  "properties": {
+    "semantic_contract_version": { "const": "v1" },
+    "contract_id": { "type": "string", "minLength": 1 },
+    "template_request_id": { "type": "string", "minLength": 1 },
+    "institution": { "type": "string", "minLength": 1 },
+    "document_type": { "type": "string", "minLength": 1 },
+    "elements": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "oneOf": [
+          { "$ref": "#/$defs/contentElement" },
+          { "$ref": "#/$defs/fixedElement" }
+        ]
+      }
+    }
+  },
+  "$defs": {
+    "contentElement": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["element_id", "role", "field_id", "description", "required", "cardinality", "content_type"],
+      "properties": {
+        "element_id": { "type": "string", "minLength": 1 },
+        "role": { "const": "CONTENT" },
+        "field_id": { "type": "string", "pattern": "^[a-z][a-z0-9_]*$" },
+        "description": { "type": "string", "minLength": 1 },
+        "display_label": { "type": "string", "minLength": 1 },
+        "required": { "type": "boolean" },
+        "cardinality": { "enum": ["one", "many"] },
+        "content_type": { "enum": ["text", "date", "choice"] }
+      }
+    },
+    "fixedElement": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["element_id", "role", "text"],
+      "properties": {
+        "element_id": { "type": "string", "minLength": 1 },
+        "role": { "enum": ["FIXED_LABEL", "FIXED_TEXT"] },
+        "text": { "type": "string", "minLength": 1 }
+      }
+    }
+  }
+}

@@ -1,0 +1,18 @@
+{
+  "semantic_contract_version": "v1",
+  "contract_id": "weekly-report-semantic-v1",
+  "template_request_id": "weekly-report-request-v1",
+  "institution": "edudoc",
+  "document_type": "주간업무보고서",
+  "elements": [
+    { "element_id": "document_title", "role": "FIXED_TEXT", "text": "주간업무보고서" },
+    { "element_id": "report_period_label", "role": "FIXED_LABEL", "text": "보고 기간" },
+    { "element_id": "report_period", "role": "CONTENT", "field_id": "report_period", "description": "보고 대상 기간", "required": true, "cardinality": "one", "content_type": "date" },
+    { "element_id": "current_week_label", "role": "FIXED_LABEL", "text": "금주 업무" },
+    { "element_id": "current_week", "role": "CONTENT", "field_id": "current_week", "description": "이번 주에 수행한 업무", "required": true, "cardinality": "one", "content_type": "text" },
+    { "element_id": "issues_label", "role": "FIXED_LABEL", "text": "주요 이슈" },
+    { "element_id": "issues", "role": "CONTENT", "field_id": "issues", "description": "보고할 주요 이슈", "required": true, "cardinality": "one", "content_type": "text" },
+    { "element_id": "next_week_label", "role": "FIXED_LABEL", "text": "차주 계획" },
+    { "element_id": "next_week", "role": "CONTENT", "field_id": "next_week", "description": "다음 주 계획", "required": true, "cardinality": "one", "content_type": "text" }
+  ]
+}

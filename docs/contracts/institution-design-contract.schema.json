@@ -1,0 +1,149 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "institution-design-contract.schema.json",
+  "title": "Institution Design Contract v1",
+  "description": "Institution policy/defaults for self-authored templates. Values are not evidence observations and do not imply runtime support.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["institution_design_version", "institution", "design_id", "evidence_reference", "defaults", "masthead"],
+  "properties": {
+    "institution_design_version": { "const": "v1" },
+    "institution": { "type": "string", "minLength": 1 },
+    "design_id": { "type": "string", "minLength": 1 },
+    "evidence_reference": { "type": "string", "minLength": 1 },
+    "defaults": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "page": { "type": "object" },
+        "styles": {
+          "description": "role name -> typography default. Every property here is an institution decision; none may be filled by an hwpx library skeleton default.",
+          "type": "object",
+          "additionalProperties": { "$ref": "#/$defs/textStyleRole" }
+        },
+        "table": {
+          "description": "role name -> table default. label_style_role/value_style_role reference role names under defaults.styles.",
+          "type": "object",
+          "additionalProperties": { "$ref": "#/$defs/tableStyleRole" }
+        }
+      }
+    },
+    "masthead": {
+      "description": "Fixed top-of-document identity band (institution-design-contract-v1 visual-layout task, 2026-08-18 user decision): a bordered box with a logo left, the document name centered, and a second logo right. When default='required', every logo_*/title_style_role/dimension property below is required and resolve() fails if any is missing — there is no skeleton/blank-masthead fallback. When default='none' only 'default'/'document_override_allowed' are read.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["default", "document_override_allowed"],
+      "properties": {
+        "default": { "enum": ["required", "none"] },
+        "document_override_allowed": { "type": "boolean" },
+        "width_mm": { "type": "number", "exclusiveMinimum": 0 },
+        "height_mm": { "type": "number", "exclusiveMinimum": 0 },
+        "border_width_mm": { "type": "number", "exclusiveMinimum": 0 },
+        "border_color": { "type": "string", "pattern": "^#[0-9A-Fa-f]{6}$" },
+        "cell_margin_mm": { "$ref": "#/$defs/cellMargin" },
+        "spacing_after_pt": { "type": "number", "minimum": 0 },
+        "title_style_role": {
+          "description": "Name of a defaults.styles role used for the document-name text centered in the masthead.",
+          "type": "string",
+          "minLength": 1
+        },
+        "logo_left_asset_id": { "type": "string", "minLength": 1 },
+        "logo_left_width_mm": { "type": "number", "exclusiveMinimum": 0 },
+        "logo_left_height_mm": { "type": "number", "exclusiveMinimum": 0 },
+        "logo_right_asset_id": { "type": "string", "minLength": 1 },
+        "logo_right_width_mm": { "type": "number", "exclusiveMinimum": 0 },
+        "logo_right_height_mm": { "type": "number", "exclusiveMinimum": 0 },
+        "logo_left_slot_width_mm": {
+          "description": "Explicit width of the masthead's left (logo) table column. logo_left_slot_width_mm + title_slot_width_mm + logo_right_slot_width_mm must equal width_mm exactly — resolve() rejects the contract otherwise. Never derived implicitly from logo size or an equal three-way split.",
+          "type": "number",
+          "exclusiveMinimum": 0
+        },
+        "title_slot_width_mm": {
+          "description": "Explicit width of the masthead's center (document-name) table column.",
+          "type": "number",
+          "exclusiveMinimum": 0
+        },
+        "logo_right_slot_width_mm": {
+          "description": "Explicit width of the masthead's right (logo) table column.",
+          "type": "number",
+          "exclusiveMinimum": 0
+        }
+      }
+    },
+    "assets": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["asset_id", "path"],
+        "properties": {
+          "asset_id": { "type": "string", "minLength": 1 },
+          "path": {
+            "description": "Relative to this design.json file's own directory (never an absolute path, never base64 content).",
+            "type": "string",
+            "minLength": 1
+          }
+        }
+      }
+    }
+  },
+  "$defs": {
+    "cellMargin": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["left", "right", "top", "bottom"],
+      "properties": {
+        "left": { "type": "number", "minimum": 0 },
+        "right": { "type": "number", "minimum": 0 },
+        "top": { "type": "number", "minimum": 0 },
+        "bottom": { "type": "number", "minimum": 0 }
+      }
+    },
+    "textStyleRole": {
+      "description": "Typography a TemplateSpec section references by role name. font_family/size_pt/color/bold/align are required so no run is ever authored with an unspecified font, color, or weight. The remaining paragraph-layout properties are optional and, when absent, are simply not applied (not defaulted by this schema).",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["font_family", "size_pt", "color", "bold", "align"],
+      "properties": {
+        "font_family": { "type": "string", "minLength": 1 },
+        "size_pt": { "type": "number", "exclusiveMinimum": 0 },
+        "color": { "type": "string", "pattern": "^#[0-9A-Fa-f]{6}$" },
+        "bold": { "type": "boolean" },
+        "align": { "enum": ["left", "center"] },
+        "line_spacing_percent": { "type": "number", "exclusiveMinimum": 0 },
+        "spacing_before_pt": { "type": "number", "minimum": 0 },
+        "spacing_after_pt": { "type": "number", "minimum": 0 },
+        "indent_left_mm": { "type": "number", "minimum": 0 },
+        "heading_rule_width_mm": {
+          "description": "Optional bottom-border divider drawn under this role's paragraphs (e.g. a section heading underline), width in mm, using this role's own 'color'. Absent means no rule is drawn.",
+          "type": "number",
+          "exclusiveMinimum": 0
+        },
+        "marker": {
+          "description": "Optional literal text prefix materialized in front of this role's text (e.g. '■ ' before a heading). Absent means no prefix.",
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
+    "tableStyleRole": {
+      "description": "info_table layout default. label_style_role/value_style_role are text-style role names (validated against defaults.styles by resolve(), not by this schema).",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["width_mm", "border_width_mm", "border_color", "label_style_role", "value_style_role", "label_width_ratio"],
+      "properties": {
+        "width_mm": { "type": "number", "exclusiveMinimum": 0 },
+        "border_width_mm": { "type": "number", "exclusiveMinimum": 0 },
+        "border_color": { "type": "string", "pattern": "^#[0-9A-Fa-f]{6}$" },
+        "label_style_role": { "type": "string", "minLength": 1 },
+        "value_style_role": { "type": "string", "minLength": 1 },
+        "label_width_ratio": {
+          "description": "Label column's share of the table width (0-1 exclusive); the value column gets the remainder. Replaces a fixed 1:1 column split so a short label and a long value are not forced to equal widths.",
+          "type": "number",
+          "exclusiveMinimum": 0,
+          "exclusiveMaximum": 1
+        }
+      }
+    }
+  }
+}

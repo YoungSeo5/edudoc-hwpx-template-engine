@@ -1,0 +1,8 @@
+{"template_spec_version":"one-page-report-v1","semantic_contract_id":"project-one-page-semantic-v1","institution_design_id":"edudoc-design-v1","institution_design_version":"v1","document_family":"one_page_report","family_recipe":"../../../templates/institutions/edudoc/_families/one_page_report/recipe.json","page":{"margins_mm":{"left":20,"right":20,"top":10,"bottom":10}},"components":[
+{"type":"masthead"},{"type":"title_block","semantic_element_id":"document_title","text":"프로젝트 현황 한장보고서"},
+{"type":"header_info","rows":[{"label_element_id":"project_label","label":"프로젝트","value_element_id":"project","field_id":"project","sample_value":"학습 플랫폼 고도화"},{"label_element_id":"owner_label","label":"책임자","value_element_id":"owner","field_id":"owner","sample_value":"김교육"}]},
+{"type":"section","heading_element_id":"summary_label","content_element_id":"summary","heading_text":"핵심 요약","field_id":"summary","sample_value":"핵심 기능 개발을 완료했습니다."},
+{"type":"status_table","rows":[{"label_element_id":"progress_label","label":"추진 현황","value_element_id":"progress","field_id":"progress","sample_value":"설계 완료, 통합 테스트 진행"}]},
+{"type":"section","heading_element_id":"results_label","content_element_id":"results","heading_text":"주요 성과","field_id":"results","sample_value":"응답 시간을 25% 개선했습니다."},
+{"type":"callout","heading_element_id":"issues_label","content_element_id":"issues","heading_text":"이슈","field_id":"issues","sample_value":"없음"},
+{"type":"footer_note","heading_element_id":"requests_label","content_element_id":"requests","heading_text":"요청사항","field_id":"requests","sample_value":"없음"}]}

@@ -1,0 +1,42 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "template-request.schema.json",
+  "title": "TemplateRequest v1",
+  "description": "Immutable record of what a user requested before document semantics or HWPX layout are decided.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["template_request_version", "institution", "document_type", "purpose", "requested_items", "reference_scope", "constraints"],
+  "properties": {
+    "template_request_version": { "const": "v1" },
+    "request_id": { "type": "string", "minLength": 1 },
+    "institution": { "type": "string", "minLength": 1 },
+    "document_type": { "type": "string", "minLength": 1 },
+    "purpose": { "type": "string", "minLength": 1 },
+    "requested_items": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["request_item_id", "description"],
+        "properties": {
+          "request_item_id": { "type": "string", "minLength": 1 },
+          "description": { "type": "string", "minLength": 1 },
+          "must_include": { "type": "boolean" }
+        }
+      }
+    },
+    "fixed_text": { "type": "array", "items": { "type": "string", "minLength": 1 } },
+    "design_requirements": { "type": "array", "items": { "type": "string", "minLength": 1 } },
+    "reference_scope": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["mode"],
+      "properties": {
+        "mode": { "enum": ["institution_baseline_only", "named_references", "no_reference"] },
+        "references": { "type": "array", "items": { "type": "string", "minLength": 1 } }
+      }
+    },
+    "constraints": { "type": "array", "items": { "type": "string", "minLength": 1 } }
+  }
+}

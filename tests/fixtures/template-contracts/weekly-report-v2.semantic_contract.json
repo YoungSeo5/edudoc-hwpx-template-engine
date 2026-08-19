@@ -1,0 +1,21 @@
+{
+  "semantic_contract_version": "v1",
+  "contract_id": "weekly-report-semantic-v2",
+  "template_request_id": "weekly-report-request-v2",
+  "institution": "edudoc",
+  "document_type": "주간업무보고서",
+  "elements": [
+    { "element_id": "document_title", "role": "FIXED_TEXT", "text": "주간업무보고서" },
+    { "element_id": "report_period_label", "role": "FIXED_LABEL", "text": "보고 기간" }, { "element_id": "report_period", "role": "CONTENT", "field_id": "report_period", "description": "보고 기간", "required": true, "cardinality": "one", "content_type": "date" },
+    { "element_id": "author_label", "role": "FIXED_LABEL", "text": "작성자" }, { "element_id": "author", "role": "CONTENT", "field_id": "author", "description": "작성자", "required": true, "cardinality": "one", "content_type": "text" },
+    { "element_id": "audience_label", "role": "FIXED_LABEL", "text": "보고 대상" }, { "element_id": "audience", "role": "CONTENT", "field_id": "audience", "description": "보고 대상", "required": true, "cardinality": "one", "content_type": "text" },
+    { "element_id": "written_on_label", "role": "FIXED_LABEL", "text": "작성일" }, { "element_id": "written_on", "role": "CONTENT", "field_id": "written_on", "description": "작성일", "required": true, "cardinality": "one", "content_type": "date" },
+    { "element_id": "document_category_label", "role": "FIXED_LABEL", "text": "문서 구분" }, { "element_id": "document_category", "role": "CONTENT", "field_id": "document_category", "description": "문서 구분", "required": true, "cardinality": "one", "content_type": "text" },
+    { "element_id": "weekly_summary_label", "role": "FIXED_LABEL", "text": "이번 주 핵심 요약" }, { "element_id": "weekly_summary", "role": "CONTENT", "field_id": "weekly_summary", "description": "핵심 성과와 상태", "required": true, "cardinality": "one", "content_type": "text" },
+    { "element_id": "major_tasks_label", "role": "FIXED_LABEL", "text": "주요 업무 현황" }, { "element_id": "major_tasks", "role": "CONTENT", "field_id": "major_tasks", "description": "업무명·상태·완료 또는 예정일", "required": true, "cardinality": "many", "content_type": "text" },
+    { "element_id": "achievements_label", "role": "FIXED_LABEL", "text": "성과 및 특이사항" }, { "element_id": "achievements", "role": "CONTENT", "field_id": "achievements", "description": "주요 성과와 특이사항", "required": true, "cardinality": "one", "content_type": "text" },
+    { "element_id": "risks_label", "role": "FIXED_LABEL", "text": "이슈 및 리스크" }, { "element_id": "risks", "role": "CONTENT", "field_id": "risks", "description": "이슈 원인과 대응", "required": true, "cardinality": "one", "content_type": "text" },
+    { "element_id": "next_week_plan_label", "role": "FIXED_LABEL", "text": "다음 주 계획" }, { "element_id": "next_week_plan", "role": "CONTENT", "field_id": "next_week_plan", "description": "다음 주 주요 업무", "required": true, "cardinality": "many", "content_type": "text" },
+    { "element_id": "support_requests_label", "role": "FIXED_LABEL", "text": "지원 요청 사항" }, { "element_id": "support_requests", "role": "CONTENT", "field_id": "support_requests", "description": "의사결정 또는 협조 요청", "required": true, "cardinality": "one", "content_type": "text" }
+  ]
+}

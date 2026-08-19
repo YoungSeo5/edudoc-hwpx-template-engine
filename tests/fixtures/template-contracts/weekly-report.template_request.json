@@ -1,0 +1,17 @@
+{
+  "template_request_version": "v1",
+  "request_id": "weekly-report-request-v1",
+  "institution": "edudoc",
+  "document_type": "주간업무보고서",
+  "purpose": "팀의 주간 업무 진행 상황, 이슈, 다음 주 계획을 공유한다.",
+  "requested_items": [
+    { "request_item_id": "report_period", "description": "보고 기간", "must_include": true },
+    { "request_item_id": "current_week", "description": "금주 업무", "must_include": true },
+    { "request_item_id": "issues", "description": "주요 이슈", "must_include": true },
+    { "request_item_id": "next_week", "description": "차주 계획", "must_include": true }
+  ],
+  "fixed_text": ["주간업무보고서"],
+  "design_requirements": [],
+  "reference_scope": { "mode": "institution_baseline_only" },
+  "constraints": []
+}

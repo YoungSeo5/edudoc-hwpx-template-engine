@@ -1,10 +1,15 @@
 # HWPX 렌더링·QA 파이프라인 다이어그램
 
-이 문서는 승인 템플릿 최종 렌더링과 후보 템플릿 QA 왕복이 어떻게 입력 해석과
-렌더·검증 커널을 공유하는지 보여주는 Mermaid 다이어그램을 보관한다. 정책 원문은
+이 문서는 승인 템플릿 최종 렌더링과 후보 템플릿 QA 왕복이 어떻게 입력 해석과 렌더·검증 커널을 공유하는지 보여주는 Mermaid 다이어그램을 보관한다. 정책 원문은
 [HWPX template routing rules](hwpx-template-rendering.md)이고, 레이아웃 보존
 계약의 세부 설계는 [HWPX 레이아웃 보존 계약 (설계)](hwpx-layout-context.md)이다.
 이 다이어그램은 그 둘의 관계를 한눈에 보여주는 보조 자료다.
+
+이 문서는 제품 전체 E2E의 Source of Truth가 아니다.
+상위 TEMPLATE_CREATE / DOCUMENT_RENDER 흐름은
+[`docs/product-workflow-contract.md`](../product-workflow-contract.md)가 소유한다.
+
+새 HWPX를 직접 저작하는 TEMPLATE_CREATE authoring 경로는 source.hwpx가 생성된 뒤 candidate QA 단계에서 이 다이어그램의 QA 경로와 합류한다.
 
 ## 검증 상태
 

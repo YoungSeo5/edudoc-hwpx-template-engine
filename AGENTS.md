@@ -17,6 +17,10 @@ short; durable architecture belongs in `docs/`.
 소관이 아니다. `docs/agent-policies/hwpx-render-pipeline-diagram.md`가 두 경로가
 공유하는 실제 실행 흐름을 보여준다.
 
+이 두 경로보다 더 큰 그림(사용자 요청 → 템플릿 설계·생성·검토·승인 → 실제 문서
+생성·제공)과, 그중 아직 이 저장소가 책임을 정의하지 않은 단계는
+`docs/product-workflow-contract.md`가 다룬다.
+
 ## Absolute prohibitions
 
 - 필드 값, 기관 규칙, 출력 형식, 템플릿 의미, 추출된 서식을 지어내지 않는다.
@@ -152,3 +156,82 @@ python -m pytest tests/ -q --basetemp=sandbox/pytest
 
 참조된 정책 파일이 없거나 읽을 수 없으면 문서 작업을 중단하고 누락을 보고한다.
 정책이 확보될 때까지 어떤 문서도 수정하지 않는다.
+
+## Project goal
+
+This repository has two top-level E2E workflows.
+
+1. `TEMPLATE_CREATE`
+   - Create a new reusable HWPX template.
+   - The template may be authored from user requirements and layout knowledge,
+     or extracted from an exact existing HWPX source.
+   - Both paths converge on candidate QA, human review, human approval, and
+     approved-template registration.
+
+2. `DOCUMENT_RENDER`
+   - Resolve an approved template.
+   - Interpret and validate the supplied document content.
+   - Render the final HWPX while preserving the approved template contract.
+
+The canonical end-to-end workflow is defined in
+`docs/product-workflow-contract.md`.
+
+Source-based candidate extraction and approved-template rendering details are
+defined in
+`docs/agent-policies/hwpx-template-rendering.md`.
+
+Do not treat the source-based extraction route as the whole TEMPLATE_CREATE
+workflow.
+
+## Work-unit execution contract
+
+Every scoped project task must have an explicit task contract before
+substantive work begins.
+
+This applies to:
+- investigation and analysis
+- planning
+- E2E or architecture changes
+- contract and schema changes
+- documentation changes
+- implementation
+- testing
+- migration
+
+Before starting a task, read in this order:
+
+1. this root `AGENTS.md`;
+2. `docs/product-workflow-contract.md`;
+3. the active task contract in `tasks/`;
+4. only the policies, references, and source files required by that task.
+
+The active task contract MUST declare its authority over the parent system
+contract.
+
+A task must state one of these:
+
+- `PRESERVE`: the parent E2E/system contract must not be changed.
+- `REVISE`: the task may revise explicitly named portions of the parent
+  E2E/system contract.
+
+`REVISE` does not permit unrestricted redesign. The task contract must name
+the exact workflow, sections, decisions, or boundaries it is allowed to
+change.
+
+When work discovers a new issue, classify it as:
+
+- `BLOCKER`: required to satisfy the current task's completion criteria.
+- `FOLLOW-UP`: valid issue, but not required to complete the current task.
+- `OUT_OF_SCOPE`: unrelated to the current task.
+
+Do not automatically expand the current task because a new issue was found.
+
+If a discovered issue proves that the active task contract itself is wrong or
+incomplete, stop only the affected work, record the issue, revise the task
+contract with human approval, and then continue.
+
+A task is DONE when its declared completion criteria are satisfied.
+Remaining FOLLOW-UP items do not prevent the task from closing.
+
+An open issue in `docs/product-workflow-contract.md` is not automatically a
+BLOCKER for every task.

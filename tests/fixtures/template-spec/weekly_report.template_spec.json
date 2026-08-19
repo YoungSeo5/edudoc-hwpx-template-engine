@@ -1,0 +1,29 @@
+{
+  "template_spec_version": "authoring-v2",
+  "semantic_contract_id": "weekly-report-semantic-v1",
+  "institution_design_id": "edudoc-design-v1",
+  "institution_design_version": "v1",
+  "page": {
+    "margins_mm": {
+      "left": 20.0,
+      "right": 20.0,
+      "top": 10.0,
+      "bottom": 10.0,
+      "header": 10.0,
+      "footer": 10.0
+    }
+  },
+  "sections": [
+    { "type": "title", "style": "title", "semantic_element_id": "document_title", "text": "주간업무보고서" },
+    {
+      "type": "info_table",
+      "style": "info_table",
+      "rows": [
+        { "label_element_id": "report_period_label", "label": "보고 기간", "value_element_id": "report_period", "field_id": "report_period", "sample_value": "2026-08-04 ~ 2026-08-08" }
+      ]
+    },
+    { "type": "body_section", "heading_style": "section_title", "body_style": "body", "heading_element_id": "current_week_label", "content_element_id": "current_week", "heading_text": "금주 업무", "field_id": "current_week", "sample_value": "신규 기능 A 개발 완료, 정기 점검 수행" },
+    { "type": "body_section", "heading_style": "section_title", "body_style": "body", "heading_element_id": "issues_label", "content_element_id": "issues", "heading_text": "주요 이슈", "field_id": "issues", "sample_value": "협력 부서 일정 지연으로 통합 테스트 1주 연기" },
+    { "type": "body_section", "heading_style": "section_title", "body_style": "body", "heading_element_id": "next_week_label", "content_element_id": "next_week", "heading_text": "차주 계획", "field_id": "next_week", "sample_value": "통합 테스트 진행 및 결과 보고" }
+  ]
+}

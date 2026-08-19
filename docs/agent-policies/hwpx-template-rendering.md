@@ -1,12 +1,35 @@
 # HWPX template routing rules
 
-Root `AGENTS.md` points here for the complete HWPX template routing rule.
+Root `AGENTS.md` points here for the source-based candidate extraction and
+approved-template rendering subroutes.
 
-## Goal
+The top-level TEMPLATE_CREATE and DOCUMENT_RENDER E2E contracts are owned by
+[`docs/product-workflow-contract.md`](../product-workflow-contract.md).
 
-Reuse an exact approved template when it exists. Create a new QA candidate only
-when no approved template exists or the user explicitly requests
-re-extraction.
+## Scope and goal
+
+This policy applies only when:
+
+1. an approved template is being resolved for final rendering; or
+2. an exact existing HWPX source is being extracted or re-extracted as a
+   candidate template.
+
+This policy does NOT define the full TEMPLATE_CREATE workflow.
+
+When the user requests a newly authored template from natural-language
+requirements, do not require an existing source HWPX and do not force the
+request into the source-extraction route defined below.
+
+That request follows the TEMPLATE_CREATE authoring path defined by
+`docs/product-workflow-contract.md` and the active task contract. Once that
+path's `generate_source_hwpx()` produces a `source.hwpx`, it has no attached
+source to resolve — that is not a missing or guessed source, it is the
+expected shape of this second entry point — and the result joins the same
+candidate QA route this policy defines below.
+
+For the source-based route covered by this policy, reuse an exact approved
+template when it exists and create a QA candidate only when no approved
+template exists or the user explicitly requests re-extraction.
 
 ## The agent MUST NOT
 
@@ -27,7 +50,7 @@ re-extraction.
 - invent missing field values or silently fall back to generic `md2hwpx`
 - require the user to repeat internal CLI commands or QA steps
 
-## Required route
+## Required source-based route
 
 1. Resolve only the exact attached source. If it is missing or ambiguous, ask
    for the file.

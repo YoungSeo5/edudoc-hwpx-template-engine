@@ -1,0 +1,9 @@
+{"semantic_contract_version":"v1","contract_id":"project-one-page-semantic-v1","template_request_id":"project-one-page-request-v1","institution":"edudoc","document_type":"프로젝트현황한장보고서","elements":[
+{"element_id":"document_title","role":"FIXED_TEXT","text":"프로젝트 현황 한장보고서"},
+{"element_id":"project_label","role":"FIXED_LABEL","text":"프로젝트"},{"element_id":"project","role":"CONTENT","field_id":"project","description":"프로젝트명","required":true,"cardinality":"one","content_type":"text"},
+{"element_id":"owner_label","role":"FIXED_LABEL","text":"책임자"},{"element_id":"owner","role":"CONTENT","field_id":"owner","description":"책임자","required":true,"cardinality":"one","content_type":"text"},
+{"element_id":"summary_label","role":"FIXED_LABEL","text":"핵심 요약"},{"element_id":"summary","role":"CONTENT","field_id":"summary","description":"핵심 요약","required":true,"cardinality":"one","content_type":"text"},
+{"element_id":"progress_label","role":"FIXED_LABEL","text":"추진 현황"},{"element_id":"progress","role":"CONTENT","field_id":"progress","description":"추진 현황","required":true,"cardinality":"one","content_type":"text"},
+{"element_id":"results_label","role":"FIXED_LABEL","text":"주요 성과"},{"element_id":"results","role":"CONTENT","field_id":"results","description":"주요 성과","required":true,"cardinality":"one","content_type":"text"},
+{"element_id":"issues_label","role":"FIXED_LABEL","text":"이슈"},{"element_id":"issues","role":"CONTENT","field_id":"issues","description":"이슈","required":true,"cardinality":"one","content_type":"text"},
+{"element_id":"requests_label","role":"FIXED_LABEL","text":"요청사항"},{"element_id":"requests","role":"CONTENT","field_id":"requests","description":"요청사항","required":true,"cardinality":"one","content_type":"text"}]}

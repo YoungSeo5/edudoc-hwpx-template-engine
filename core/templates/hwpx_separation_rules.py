@@ -41,6 +41,7 @@ class TextLocation:
 class LocationRule:
     role: TextRole
     section: str
+    field_id: str | None = None
     text_node_index: int | None = None
     table: int | None = None
     row: int | None = None
@@ -64,6 +65,14 @@ class SeparationRules:
         matched = {rule.role for rule in self.rules if rule.matches(location)}
         if len(matched) > 1:
             raise SeparationRuleError(Path(location.section), "conflicting location rules")
+        return next(iter(matched), None)
+
+    def field_id_for(self, location: TextLocation) -> str | None:
+        matched = {
+            rule.field_id for rule in self.rules if rule.matches(location) and rule.field_id is not None
+        }
+        if len(matched) > 1:
+            raise SeparationRuleError(Path(location.section), "conflicting canonical field_id rules")
         return next(iter(matched), None)
 
     def semantic_role_for(
@@ -127,6 +136,7 @@ def _parse_rule(path: Path, item: JsonValue) -> LocationRule:
     selector = LocationRule(
         role=role,
         section=section,
+        field_id=_optional_field_id(path, item.get("field_id"), role),
         text_node_index=_optional_int(path, item.get("text_node_index"), "text_node_index"),
         table=_optional_int(path, item.get("table"), "table"),
         row=_optional_int(path, item.get("row"), "row"),
@@ -142,4 +152,14 @@ def _optional_int(path: Path, value: JsonValue, name: str) -> int | None:
         return None
     if isinstance(value, bool) or not isinstance(value, int) or value < 0:
         raise SeparationRuleError(path, f"{name} must be a non-negative integer")
+    return value
+
+
+def _optional_field_id(path: Path, value: JsonValue, role: TextRole) -> str | None:
+    if value is None:
+        return None
+    if role is not TextRole.CONTENT:
+        raise SeparationRuleError(path, "field_id is valid only for a content rule")
+    if not isinstance(value, str) or not value:
+        raise SeparationRuleError(path, "field_id must be a non-empty string")
     return value

@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+from hashlib import sha256
 import shutil
 import zipfile
 from dataclasses import dataclass
@@ -9,6 +10,14 @@ from pathlib import Path
 
 from .registry import TemplateRegistry
 from .serialization import load_candidate
+from ..adapters.hwpx_semantic_contract import (
+    bind_semantic_contract,
+    load_semantic_contract,
+    validate_candidate_field_identity,
+)
+from ..adapters.hwpx_template_authoring import load_template_spec
+from ..adapters.hwpx_template_input import prepare_hwpx_template_input
+from ..adapters.hwpx_template_input import HwpxTemplateInputError
 
 # 이 모듈의 경계:
 # hwpx_content_separator가 남긴 candidate 폴더
@@ -24,6 +33,18 @@ REQUIRED_FILES = (
     "template.review.md",
     "source.hwpx",
 )
+
+CONTRACT_COMPLETE_FILES = (
+    "template_request.json",
+    "semantic_contract.json",
+    "template_spec.json",
+    "institution_design.provenance.json",
+    "resolved_authoring_contract.json",
+    "qa.report.json",
+    "human_review.json",
+)
+
+EVIDENCE_FILES = frozenset({"qa.report.json", "human_review.json"})
 
 _UNKNOWN = "확인 필요"
 
@@ -142,6 +163,9 @@ def _validate_candidate(source: Path) -> dict[str, str]:
             "resolve every AMBIGUOUS decision before registration"
         )
 
+    if (source / "semantic_contract.json").is_file():
+        _validate_contract_complete_candidate(source)
+
     values = {}
     for name in ("institution", "document_type", "template_id"):
         value = getattr(candidate.identity, name)
@@ -151,6 +175,63 @@ def _validate_candidate(source: Path) -> dict[str, str]:
             )
         values[name] = value.strip()
     return values
+
+
+def _validate_contract_complete_candidate(source: Path) -> None:
+    if not (source / "human_review.json").is_file():
+        raise TemplateRegistrationError(
+            "contract-complete candidate has no human visual approval evidence"
+        )
+    missing = [name for name in CONTRACT_COMPLETE_FILES if not (source / name).is_file()]
+    if missing:
+        raise TemplateRegistrationError(
+            f"contract-complete candidate is missing required files: {', '.join(missing)}"
+        )
+    try:
+        semantic = load_semantic_contract(source / "semantic_contract.json")
+        spec = load_template_spec(source / "template_spec.json")
+        bind_semantic_contract(semantic, spec)
+        validate_candidate_field_identity(semantic, source)
+        qa = json.loads((source / "qa.report.json").read_text(encoding="utf-8"))
+        review = json.loads((source / "human_review.json").read_text(encoding="utf-8"))
+        sample = json.loads((source / "content.sample.json").read_text(encoding="utf-8"))
+    except (OSError, ValueError, TypeError) as exc:
+        raise TemplateRegistrationError(f"cannot validate contract-complete candidate: {exc}") from exc
+    if qa.get("ok") is not True:
+        raise TemplateRegistrationError("contract-complete candidate has no machine QA PASS evidence")
+    candidate_digest = candidate_artifact_digest(source)
+    if qa.get("candidate_digest") != candidate_digest:
+        raise TemplateRegistrationError(
+            "contract-complete candidate machine QA evidence does not match current candidate"
+        )
+    if review.get("reviewed") is not True or review.get("approved") is not True:
+        raise TemplateRegistrationError("contract-complete candidate has no human visual approval evidence")
+    if review.get("candidate_digest") != candidate_digest:
+        raise TemplateRegistrationError(
+            "contract-complete candidate human visual approval evidence does not match current candidate"
+        )
+    fields = sample.get("fields")
+    if not isinstance(fields, dict):
+        raise TemplateRegistrationError("content.sample.json requires a fields object")
+    try:
+        prepare_hwpx_template_input(source, fields)
+    except HwpxTemplateInputError as exc:
+        raise TemplateRegistrationError(
+            f"approved package cannot prepare final rendering: {exc}"
+        ) from exc
+
+
+def candidate_artifact_digest(candidate_dir: Path | str) -> str:
+    candidate = Path(candidate_dir)
+    digest = sha256()
+    for artifact in sorted(path for path in candidate.rglob("*") if path.is_file()):
+        relative = artifact.relative_to(candidate).as_posix()
+        if relative in EVIDENCE_FILES:
+            continue
+        digest.update(relative.encode("utf-8"))
+        digest.update(b"\0")
+        digest.update(sha256(artifact.read_bytes()).digest())
+    return digest.hexdigest()
 
 
 def _reject_template_id_conflict(registry_root: Path, template_id: str) -> None:

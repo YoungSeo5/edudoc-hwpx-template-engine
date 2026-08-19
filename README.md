@@ -318,6 +318,7 @@ macOS/Linux Bash:
 
 - `AGENTS.md` — 프로젝트 목표, 금지사항, 테스트·문서 정책
 - `SKILL.md` — 승인 템플릿 조회 → 최종 렌더 / candidate QA 라우팅
+- `docs/product-workflow-contract.md` — 템플릿 생성·사용 전체 워크플로 계약, 각 단계별 구현 현황과 미결정 사항
 - `docs/agent-policies/hwpx-template-rendering.md` — HWPX 템플릿 라우팅과 반복 계약
 - `docs/agent-policies/hwpx-render-pipeline-diagram.md` — 실제 렌더·QA 파이프라인
 - `docs/agent-policies/hwpx-layout-context.md` — 레이아웃 보존 계약

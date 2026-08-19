@@ -278,9 +278,18 @@ def _section_decisions(
             and None not in table_key
             and sum(1 for item in table_contexts[table_key] if item.normalized_text) >= 2
         )
+        # 사람이 --rules resolutions로 MARKER_CONTENT를 확정한 노드는 표 안에
+        # 있어도 same-node lossless span 치환 대상이다. 일반 table_cell field
+        # 생성 경로로 보내면 표식(prefix/suffix)이 스킬 채움 단계에서 사라진다.
+        semantic = semantic_by_index.get(context.location.text_node_index)
+        is_marker_content_node = (
+            semantic is not None and semantic.role is SemanticRole.MARKER_CONTENT
+        )
+        is_semantic_fixed = semantic is not None and semantic.role is SemanticRole.FIXED
         if (
             is_table_text
             and not cell_is_multi_node
+            and not is_marker_content_node
             and None not in table_key
             and table_key not in seen_table_cells
         ):
@@ -291,7 +300,7 @@ def _section_decisions(
             if sample_value and _table_cell_is_content(cell_contexts, rules):
                 category = content_category(sample_value)
                 counters[category] = counters.get(category, 0) + 1
-                field_id = f"{category}_{counters[category]:02d}"
+                field_id = rules.field_id_for(cell_contexts[0].location) or f"{category}_{counters[category]:02d}"
                 table_fields.append(
                     {
                         "field_id": field_id,
@@ -311,21 +320,19 @@ def _section_decisions(
                         ),
                     }
                 )
-        node_level = not is_table_text or cell_is_multi_node
-        semantic = semantic_by_index.get(location.text_node_index)
+        node_level = not is_table_text or cell_is_multi_node or is_marker_content_node
         # 사람이 --rules resolutions로 MARKER_CONTENT를 확정한 노드만 same-node
         # lossless span 치환 대상이다. 그 외에는 기존 whole-node CONTENT 경로다.
-        is_marker_content = (
-            node_level and semantic is not None and semantic.role is SemanticRole.MARKER_CONTENT
-        )
+        is_marker_content = node_level and is_marker_content_node
         if is_marker_content:
             category = content_category(semantic.span.content_decoded)
         if context.normalized_text and node_level:
             counters[category] = counters.get(category, 0) + 1
-            candidate_field_id = f"{category}_{counters[category]:02d}"
+            candidate_field_id = rules.field_id_for(context.location) or f"{category}_{counters[category]:02d}"
         replace = (
             bool(context.normalized_text)
             and node_level
+            and not is_semantic_fixed
             and (role is TextRole.CONTENT or is_marker_content)
         )
         field_id = candidate_field_id if replace else None

@@ -1,0 +1,14 @@
+{
+  "template_spec_version": "one-page-report-v1", "semantic_contract_id": "weekly-report-semantic-v2", "institution_design_id": "edudoc-design-v1", "institution_design_version": "v1", "document_family": "one_page_report", "family_recipe": "../../../templates/institutions/edudoc/_families/one_page_report/recipe.json",
+  "page": { "margins_mm": { "left": 20.0, "right": 20.0, "top": 10.0, "bottom": 10.0, "header": 10.0, "footer": 10.0 } },
+  "components": [
+    { "type": "masthead" }, { "type": "title_block", "semantic_element_id": "document_title", "text": "주간업무보고서" },
+    { "type": "header_info", "rows": [{ "label_element_id": "report_period_label", "label": "보고 기간", "value_element_id": "report_period", "field_id": "report_period", "sample_value": "2026-08-04~08-08" }, { "label_element_id": "author_label", "label": "작성자", "value_element_id": "author", "field_id": "author", "sample_value": "홍길동" }, { "label_element_id": "audience_label", "label": "보고 대상", "value_element_id": "audience", "field_id": "audience", "sample_value": "사업총괄" }, { "label_element_id": "written_on_label", "label": "작성일", "value_element_id": "written_on", "field_id": "written_on", "sample_value": "2026-08-08" }, { "label_element_id": "document_category_label", "label": "문서 구분", "value_element_id": "document_category", "field_id": "document_category", "sample_value": "정기보고" }] },
+    { "type": "section", "heading_element_id": "weekly_summary_label", "content_element_id": "weekly_summary", "heading_text": "이번 주 핵심 요약", "field_id": "weekly_summary", "sample_value": "신규 기능 A 개발과 정기 점검을 완료했습니다." },
+    { "type": "status_table", "rows": [{ "label_element_id": "major_tasks_label", "label": "주요 업무 현황", "value_element_id": "major_tasks", "field_id": "major_tasks", "sample_value": "□ 업무 A 완료 8/14\n□ 업무 B 진행 8/21" }] },
+    { "type": "section", "heading_element_id": "achievements_label", "content_element_id": "achievements", "heading_text": "성과 및 특이사항", "field_id": "achievements", "sample_value": "배포 자동화 시간을 30% 단축했습니다." },
+    { "type": "callout", "heading_element_id": "risks_label", "content_element_id": "risks", "heading_text": "이슈 및 리스크", "field_id": "risks", "sample_value": "없음" },
+    { "type": "bullet_list", "heading_element_id": "next_week_plan_label", "content_element_id": "next_week_plan", "heading_text": "다음 주 계획", "field_id": "next_week_plan", "sample_value": "① 통합 테스트\n② 결과 보고\n③ 운영 이관" },
+    { "type": "footer_note", "heading_element_id": "support_requests_label", "content_element_id": "support_requests", "heading_text": "지원 요청 사항", "field_id": "support_requests", "sample_value": "없음" }
+  ]
+}

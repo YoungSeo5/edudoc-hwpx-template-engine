@@ -130,20 +130,21 @@ def _candidate_template_dir_with_metadata(tmp_path: Path) -> Path:
     return template_dir
 
 
-def test_template_without_metadata_contract_cannot_produce_a_document(
+def test_template_without_alias_map_renders_canonical_content(
     tmp_path: Path,
 ) -> None:
     template_dir = _candidate_template_dir(tmp_path)
 
-    with pytest.raises(HwpxTemplateRenderError, match="alias_map metadata contract"):
-        orchestrate_hwpx_render(
-            template_dir,
-            {"demo_field": "OK"},
-            tmp_path / "거부.hwpx",
-            execution_context=EXECUTION_CONTEXT,
-        )
+    output = tmp_path / "generic.hwpx"
+    result = orchestrate_hwpx_render(
+        template_dir,
+        {"demo_field": "OK"},
+        output,
+        execution_context=EXECUTION_CONTEXT,
+    )
 
-    assert not (tmp_path / "거부.hwpx").exists()
+    assert result.filled_fields == ["demo_field"]
+    assert output.is_file()
 
 
 def test_final_generation_requires_an_execution_context() -> None:

@@ -1,0 +1,86 @@
+{
+  "institution_design_version": "v1",
+  "institution": "edudoc",
+  "design_id": "edudoc-design-v1",
+  "evidence_reference": "docs/hwpx-layout-baseline.md",
+  "defaults": {
+    "page": {},
+    "styles": {
+      "title": {
+        "font_family": "함초롬돋움",
+        "size_pt": 17,
+        "color": "#1F3864",
+        "bold": true,
+        "align": "center"
+      },
+      "section_title": {
+        "font_family": "함초롬돋움",
+        "size_pt": 15,
+        "color": "#1F3864",
+        "bold": true,
+        "align": "left",
+        "spacing_before_pt": 10,
+        "spacing_after_pt": 4,
+        "marker": "■ "
+      },
+      "body": {
+        "font_family": "함초롬바탕",
+        "size_pt": 13,
+        "color": "#000000",
+        "bold": false,
+        "align": "left",
+        "line_spacing_percent": 160,
+        "spacing_after_pt": 8,
+        "indent_left_mm": 4.0
+      },
+      "info_table_label": {
+        "font_family": "함초롬바탕",
+        "size_pt": 11,
+        "color": "#1F3864",
+        "bold": true,
+        "align": "left"
+      },
+      "info_table_value": {
+        "font_family": "함초롬바탕",
+        "size_pt": 11,
+        "color": "#000000",
+        "bold": false,
+        "align": "left"
+      }
+    },
+    "table": {
+      "info_table": {
+        "width_mm": 170.0,
+        "border_width_mm": 0.12,
+        "border_color": "#BFBFBF",
+        "label_style_role": "info_table_label",
+        "value_style_role": "info_table_value",
+        "label_width_ratio": 0.22
+      }
+    }
+  },
+  "masthead": {
+    "default": "required",
+    "document_override_allowed": true,
+    "width_mm": 170.0,
+    "height_mm": 22.0,
+    "border_width_mm": 0.4,
+    "border_color": "#1F3864",
+    "cell_margin_mm": { "left": 3.0, "right": 3.0, "top": 2.0, "bottom": 2.0 },
+    "spacing_after_pt": 12,
+    "title_style_role": "title",
+    "logo_left_asset_id": "test_logo_left",
+    "logo_left_width_mm": 26.0,
+    "logo_left_height_mm": 14.6,
+    "logo_right_asset_id": "test_logo_right",
+    "logo_right_width_mm": 14.0,
+    "logo_right_height_mm": 14.0,
+    "logo_left_slot_width_mm": 34.0,
+    "title_slot_width_mm": 102.0,
+    "logo_right_slot_width_mm": 34.0
+  },
+  "assets": [
+    { "asset_id": "test_logo_left", "path": "assets/test-logo-left.png" },
+    { "asset_id": "test_logo_right", "path": "assets/test-logo-right.png" }
+  ]
+}

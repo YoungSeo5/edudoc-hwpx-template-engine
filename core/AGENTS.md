@@ -8,7 +8,7 @@
 
 | 폴더 | 책임 |
 |---|---|
-| `core/adapters/` | HWPX 렌더링, 입력 해석(alias·choice·text_rules·반복 블록), table_cell 치환 위임, 템플릿별 패키지 metadata 준비 |
+| `core/adapters/` | HWPX 렌더링, 입력 해석(alias·choice·text_rules·반복 블록), table_cell 치환 위임, 템플릿별 패키지 metadata 준비, template_spec 기반 HWPX 저작(source.hwpx 생성) |
 | `core/templates/` | HWPX 후보 추출, 콘텐츠 분리, 레이아웃 보존 계약, 품질 검사, 승인 템플릿 조회(`TemplateRegistry`) |
 | `core/document_api/` | 외부 연동이 부르는 얇은 연결 경계. 별도 [AGENTS.md](document_api/AGENTS.md)를 따른다 |
 

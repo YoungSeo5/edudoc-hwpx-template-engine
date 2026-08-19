@@ -8,18 +8,19 @@ from pathlib import Path
 
 from .hwpx_alias_map import (
     AliasMap,
-    BlockMetadataSource,
-    FieldMetadataSource,
     FitConstraint,
     JsonValue,
-    MetadataContract,
     RepeatBlock,
-    RequestedAtMetadataSource,
     load_alias_map,
 )
 from .hwpx_fss_director_report import (
     FssPackageMetadata,
     build_fss_package_metadata,
+)
+from .hwpx_template_metadata import (
+    MetadataResolutionError,
+    ResolvedMetadata,
+    resolve_metadata as resolve_template_metadata,
 )
 
 
@@ -87,7 +88,7 @@ class PreparedRenderContent:
     placeholder_map: Mapping[str, JsonValue]
     render_plan: ResolvedRenderPlan
     unknown_keys: tuple[str, ...]
-    package_metadata: FssPackageMetadata
+    package_metadata: FssPackageMetadata | None
 
 
 def load_placeholder_map(template_dir: Path | str) -> Mapping[str, JsonValue]:
@@ -102,90 +103,6 @@ def load_placeholder_map(template_dir: Path | str) -> Mapping[str, JsonValue]:
             f"placeholder_map.json root must be an object: {path}"
         )
     return raw
-
-
-def _resolve_metadata(
-    flattened: Mapping[str, JsonValue],
-    alias_map: AliasMap,
-    contract: MetadataContract,
-    repeat_values: Mapping[str, list[JsonValue]],
-    requested_at: datetime | None,
-) -> ResolvedMetadata:
-    """Read document metadata from the already-flattened input.
-
-    The values are read before the choice and text rules run, so metadata keeps
-    the human-authored option (``언론보도``) rather than the rendered checkbox
-    line.
-    """
-
-    def read_field(alias: str, *, required: bool = False) -> str:
-        value = flattened.get(alias)
-        if value is None and alias not in alias_map.choices:
-            value = flattened.get(alias_map.aliases[alias])
-        if value is None and not required:
-            return ""
-        if not isinstance(value, str) or (required and not value.strip()):
-            requirement = "a non-empty string" if required else "a string"
-            raise HwpxTemplateInputError(
-                f"metadata field {alias!r} must be {requirement}"
-            )
-        return value
-
-    def resolve_source(
-        source: FieldMetadataSource
-        | BlockMetadataSource
-        | RequestedAtMetadataSource,
-    ) -> list[str]:
-        if isinstance(source, FieldMetadataSource):
-            value = read_field(source.alias)
-            return [value + source.suffix] if value else []
-        if isinstance(source, BlockMetadataSource):
-            block = alias_map.blocks[source.block]
-            return [
-                item[1]
-                for item in repeat_values.get(block.anchor, [])
-                if item[0] == source.level and item[1]
-            ]
-        if requested_at is None:
-            raise HwpxTemplateInputError(
-                "metadata requested_at requires execution_context"
-            )
-        return [requested_at.isoformat().replace("+00:00", "Z")]
-
-    def one_value(
-        source: FieldMetadataSource | RequestedAtMetadataSource,
-        name: str,
-    ) -> str:
-        values = resolve_source(source)
-        if len(values) != 1 or not values[0].strip():
-            raise HwpxTemplateInputError(
-                f"metadata {name} must resolve to one non-empty string"
-            )
-        return values[0]
-
-    def optional_value(source: FieldMetadataSource) -> str:
-        values = resolve_source(source)
-        if not values:
-            return ""
-        if len(values) != 1:
-            raise HwpxTemplateInputError(
-                "metadata description must resolve to at most one string"
-            )
-        return values[0]
-
-    subject_values = resolve_source(contract.subject)
-    keyword_values = [
-        value
-        for source in contract.keywords
-        for value in resolve_source(source)
-    ]
-    return ResolvedMetadata(
-        title=one_value(contract.title, "title"),
-        subject=contract.subject_separator.join(subject_values),
-        description=optional_value(contract.description),
-        report_date=one_value(contract.report_date, "report_date"),
-        keywords=contract.keyword_separator.join(keyword_values),
-    )
 
 
 def resolve_hwpx_template_input(
@@ -236,17 +153,20 @@ def resolve_hwpx_template_input(
         else:
             field_values[block.anchor] = value
 
-    metadata = (
-        _resolve_metadata(
-            flattened,
-            alias_map,
-            alias_map.metadata,
-            repeat_values,
-            requested_at,
+    try:
+        metadata = (
+            resolve_template_metadata(
+                flattened,
+                alias_map,
+                alias_map.metadata,
+                repeat_values,
+                requested_at,
+            )
+            if resolve_metadata and alias_map.metadata is not None
+            else None
         )
-        if resolve_metadata and alias_map.metadata is not None
-        else None
-    )
+    except MetadataResolutionError as exc:
+        raise HwpxTemplateInputError(str(exc)) from exc
     return ResolvedTemplateContent(
         template_id=template_id,
         placeholder_map=placeholder_map,
@@ -285,13 +205,8 @@ def prepare_hwpx_template_input(
             else None
         ),
     )
-    if resolved.metadata is None:
-        raise HwpxTemplateInputError(
-            f"template {resolved.template_id!r} declares no alias_map metadata "
-            "contract, so it cannot produce a final document; round-trip a "
-            "template that is still being built with render_candidate_roundtrip"
-        )
-    if execution_context is None:
+    _validate_required_semantic_content(template_dir, resolved.render_plan.field_values)
+    if resolved.metadata is not None and execution_context is None:
         raise HwpxTemplateInputError(
             f"template {resolved.template_id!r} requires execution_context "
             "to record the requester and request time"
@@ -302,9 +217,35 @@ def prepare_hwpx_template_input(
         placeholder_map=resolved.placeholder_map,
         render_plan=resolved.render_plan,
         unknown_keys=resolved.unknown_keys,
-        package_metadata=build_fss_package_metadata(
-            resolved.metadata,
-            requester_name=execution_context.requester_name,
-            requested_at=execution_context.requested_at,
+        package_metadata=(
+            build_fss_package_metadata(
+                resolved.metadata,
+                requester_name=execution_context.requester_name,
+                requested_at=execution_context.requested_at,
+            )
+            if resolved.metadata is not None and execution_context is not None
+            else None
         ),
     )
+
+
+def _validate_required_semantic_content(
+    template_dir: Path | str, fields: Mapping[str, JsonValue]
+) -> None:
+    path = Path(template_dir) / "semantic_contract.json"
+    if not path.is_file():
+        return
+    from .hwpx_semantic_contract import load_semantic_contract
+
+    contract = load_semantic_contract(path)
+    missing = [
+        element.field_id
+        for element in contract.elements
+        if element.role == "CONTENT"
+        and element.required
+        and (element.field_id not in fields or fields[element.field_id] == "확인 필요")
+    ]
+    if missing:
+        raise HwpxTemplateInputError(
+            f"required canonical semantic field(s) are missing or unresolved: {missing}"
+        )
