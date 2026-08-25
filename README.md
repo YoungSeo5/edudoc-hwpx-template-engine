@@ -5,7 +5,7 @@
 이 저장소는 자유 형식 문서 생성기나 포맷 변환기가 아닙니다. 다루는 경로는 두 가지입니다.
 
 1. 이미 승인된 템플릿으로 최종 문서를 생성한다.
-2. 승인 템플릿이 없으면 새 HWPX 원본에서 후보를 추출·QA하고, 사람이 검토한 뒤 등록한다.
+2. 승인 템플릿이 없으면 후보를 만들어 QA하고, 사람이 검토한 뒤 등록한다. 후보는 기존 HWPX 원본에서 추출하거나, 요구사항과 계약으로 직접 작성한다.
 
 ---
 
@@ -33,7 +33,9 @@ flowchart TD
     VALIDATE --> OUTPUT["최종 HWPX"]
 
     REGISTRY -->|approved 없음| SOURCE["새 원본 HWPX"]
+    REGISTRY -->|approved 없음| AUTHOR["요구사항 · 계약으로 직접 작성"]
     SOURCE --> QA["후보 추출 · 분류 · QA"]
+    AUTHOR --> QA
     QA --> CANDIDATE["candidate"]
     CANDIDATE --> REVIEW["사람 검토 · 계약 작성"]
     REVIEW --> REGISTER["승인 · 등록"]
@@ -61,10 +63,12 @@ flowchart TD
 
 Python 버전은 [.python-version](.python-version)을 따릅니다.
 
-이 저장소는 두 submodule에 의존합니다.
+이 저장소는 두 submodule 없이는 동작하지 않습니다.
 
-- `templates/institutions/` — 실제 기관 템플릿 데이터
-- `skills/hwp-skill/` — 일부 HWPX `table_cell` 치환 처리
+| 경로 | 내용 | 없을 때 |
+|---|---|---|
+| `templates/institutions/` | 실제 기관 템플릿 데이터 (비공개 저장소) | 승인 템플릿을 찾을 수 없습니다 |
+| `skills/hwp-skill/` | `table_cell` 필드 치환을 위임하는 스킬 | 해당 필드를 가진 템플릿 렌더가 실패합니다 |
 
 Windows PowerShell:
 
@@ -133,7 +137,11 @@ macOS/Linux Bash:
 
 ## 3. 승인 템플릿이 없을 때 candidate 생성
 
-새로운 기관·문서 유형의 HWPX를 템플릿화하려면 후보 생성 경로를 사용합니다.
+새로운 기관·문서 유형을 템플릿화하는 정상 진입 경로는 두 가지입니다. 두 경로 모두 candidate QA → 사람 검토 → 사람 승인 → 등록으로 합류합니다.
+
+### 3-1. 기존 HWPX 원본에서 추출
+
+정확한 기존 HWPX 원본이 있으면 그 원본에서 후보를 추출합니다.
 
 Windows PowerShell:
 
@@ -161,6 +169,38 @@ macOS/Linux Bash:
 marker, 반복 구간처럼 XML 좌표만으로 의미를 판단하기 어려운 항목은 사람이 검토합니다.
 
 후보 생성 경로는 원본을 보존하면서 사람이 검토할 수 있는 `candidate`를 만드는 데 목적이 있습니다.
+
+### 3-2. 요구사항과 계약으로 직접 작성
+
+정확한 기존 원본이 없으면 요구사항과 계약에서 후보를 직접 작성합니다. `author_hwpx_template.py`는 TemplateRequest, Semantic Template Contract, executable TemplateSpec, Institution Design Contract를 받아 source HWPX와 분리 규칙을 만든 뒤, 그 결과를 위와 같은 candidate QA 경로로 넘깁니다. 이 스크립트는 승인이나 최종 렌더를 수행하지 않습니다.
+
+Windows PowerShell:
+
+```powershell
+.\.venv\Scripts\python.exe scripts/templates/author_hwpx_template.py `
+  --template-request <template_request.json> `
+  --semantic-contract <semantic_contract.json> `
+  --template-spec <template_spec.json> `
+  --institution-design <design.json> `
+  --output-dir sandbox/template-candidates/<새-후보> `
+  --institution <기관명> `
+  --document-type <문서유형>
+```
+
+macOS/Linux Bash:
+
+```bash
+./.venv/bin/python scripts/templates/author_hwpx_template.py \
+  --template-request <template_request.json> \
+  --semantic-contract <semantic_contract.json> \
+  --template-spec <template_spec.json> \
+  --institution-design <design.json> \
+  --output-dir sandbox/template-candidates/<새-후보> \
+  --institution <기관명> \
+  --document-type <문서유형>
+```
+
+각 입력 계약의 책임과 형식은 [docs/contracts/template-authoring-contracts.md](docs/contracts/template-authoring-contracts.md)를 따릅니다.
 
 ---
 
@@ -292,6 +332,13 @@ macOS/Linux Bash:
 
 ```bash
 ./.venv/bin/python -m pytest tests/ -q --basetemp=sandbox/pytest
+```
+
+CI처럼 운영체제별 venv 경로를 쓰지 않는 환경에서는 설치 Python을 [.python-version](.python-version)의 3.13으로 고정한 뒤 다음을 사용합니다.
+
+```bash
+python -m pip install -r requirements-dev.txt
+python -m pytest tests/ -q --basetemp=sandbox/pytest
 ```
 
 관련 테스트가 실패하거나 경고하면 완료·검증됨으로 간주하지 않습니다.

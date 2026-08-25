@@ -217,6 +217,9 @@ def verify_recorded_layout(
 테스트는 `tests/task_scoped/test_fss_one_page_final_rendering.py` 의
 `test_one_page_restores_each_field_fwspace_in_a_filled_table_cell` — 한 셀 안의 여러
 field가 각자 기록한 `leading_fwspace_count` 를 유지하는지 본다.
+같은 파일의 `test_one_page_restores_table_cell_leading_fwspaces_after_skill_fill` 처럼
+한 셀의 여러 text node를 함께 보는 작업 전용 테스트는 2026-08-11에 복원 키를
+`text_node_index` 단위로 바꾼 수정으로 통과한다.
 
 ## 6. 변경 지점 (구현 완료)
 

@@ -33,6 +33,19 @@ its `template_id` remains the canonical immutable revision identity.
 `templates/institutions/` is a protected data submodule. This repository
 defines that layout but does not create or edit its institution data.
 
+## Interpretation rules
+
+These contracts hold separate responsibilities. Do not infer a meaning, field,
+or layout/style value that lies outside one contract's responsibility from
+another contract or from the existing implementation.
+
+- Do not materialize a visual value that the resolved Institution Design
+  Contract and the TemplateSpec do not state.
+- An unsupported or invalid declaration fails fast. Do not render it in another
+  form and do not fall back silently.
+- `FIXED` / `CONTENT`, the canonical path, cardinality, and requiredness are
+  executed as declared and are not reinterpreted.
+
 ## Schemas
 
 - [TemplateRequest v1](template-request.schema.json)

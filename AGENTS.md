@@ -5,21 +5,35 @@ short; durable architecture belongs in `docs/`.
 
 ## Project goal
 
-기관이 승인한 HWPX 서식의 레이아웃을 보존한 채 내용만 채워 문서를 생성하는
-참조 기반 문서 생성 엔진이다. 포맷 변환기가 아니다.
+이 저장소는 기관이 승인한 HWPX 서식의 레이아웃을 보존한 채 내용을 채워 문서를
+생성하는 참조 기반 문서 생성 엔진이며, 최상위 E2E workflow는 두 개다.
 
-이 저장소가 다루는 것은 두 경로뿐이다.
+1. `TEMPLATE_CREATE` — 새 재사용 HWPX template candidate를 만든다. 정상 진입
+   경로는 사용자 요구사항·계약·layout knowledge로 self-authored candidate를
+   만드는 경로와 정확한 기존 HWPX source에서 추출하는 경로 두 개이며, 둘 다
+   candidate QA, human review, human approval, approved-template registration
+   으로 합류한다.
+2. `DOCUMENT_RENDER` — approved template을 resolve하고 supplied document
+   content를 해석·검증한 뒤, approved template contract를 보존하며 content를
+   적용해 최종 HWPX를 생성한다.
 
-- 승인 템플릿 최종 렌더링
-- 후보 템플릿 추출·QA·등록
+이 저장소는 포맷 변환기가 아니다. 일반 문서 변환, 마크다운→HWPX,
+DOCX/PPTX/PDF 내보내기, 공문 생성은 이 저장소 소관이 아니다. Source-based
+extraction을 `TEMPLATE_CREATE` 전체 workflow로 취급하지 않는다.
 
-일반 문서 변환, 마크다운→HWPX, DOCX/PPTX/PDF 내보내기, 공문 생성은 이 저장소
-소관이 아니다. `docs/agent-policies/hwpx-render-pipeline-diagram.md`가 두 경로가
-공유하는 실제 실행 흐름을 보여준다.
+canonical E2E workflow와 이 저장소가 아직 책임을 정의하지 않은 단계는
+[Product workflow contract](docs/product-workflow-contract.md)가 다룬다.
+Source-based candidate extraction과 approved-template rendering의 세부 규칙은
+[HWPX template rendering policy](docs/agent-policies/hwpx-template-rendering.md)에
+있고, candidate QA와 final rendering이 공유하는 실제 실행 흐름은
+[HWPX render pipeline diagram](docs/agent-policies/hwpx-render-pipeline-diagram.md)이
+보여준다.
 
-이 두 경로보다 더 큰 그림(사용자 요청 → 템플릿 설계·생성·검토·승인 → 실제 문서
-생성·제공)과, 그중 아직 이 저장소가 책임을 정의하지 않은 단계는
-`docs/product-workflow-contract.md`가 다룬다.
+## Response language
+
+Always respond to the user in Korean, including implementation summaries,
+test results, review findings, and explanations. Keep code identifiers,
+commands, paths, and literal error messages in their original language.
 
 ## Absolute prohibitions
 
@@ -49,26 +63,26 @@ short; durable architecture belongs in `docs/`.
 
 ## Dependencies
 
-이 저장소는 submodule 두 개 없이는 동작하지 않는다.
+이 저장소는 submodule 두 개 없이는 동작하지 않는다. `templates/institutions/`가
+없으면 승인 템플릿을 찾을 수 없고, `skills/hwp-skill/`이 없으면 `table_cell`
+필드를 가진 템플릿 렌더가 실패한다. submodule 초기화와 실행 환경 준비 절차는
+[README](README.md)의 `1. 실행 환경 준비`가 소유한다.
 
-| 경로 | 내용 | 없을 때 |
-|---|---|---|
-| `templates/institutions/` | 기관 템플릿 데이터 (비공개 저장소) | 승인 템플릿을 찾을 수 없다 |
-| `skills/hwp-skill/` | `table_cell` 필드 치환을 위임하는 스킬 | 해당 필드를 가진 템플릿 렌더가 실패한다 |
+## Work-unit execution contract
 
-Windows PowerShell:
+모든 scoped task는 substantive work 전에 explicit task contract가 있어야 한다.
 
-```powershell
-git submodule update --init --recursive
-.\.venv\Scripts\python.exe -m pip install -r requirements-dev.txt
-```
+Before starting a task, read in this order:
 
-macOS/Linux Bash:
+1. this root `AGENTS.md`;
+2. [Product workflow contract](docs/product-workflow-contract.md);
+3. the active task contract in `docs/tasks/`;
+4. only the policies, references, and source files required by that task.
 
-```bash
-git submodule update --init --recursive
-./.venv/bin/python -m pip install -r requirements-dev.txt
-```
+task contract authority(`PRESERVE` / `REVISE`), 발견 이슈 분류
+(`BLOCKER` / `FOLLOW-UP` / `OUT_OF_SCOPE`), DONE 판단의 상세 규칙은
+[Work-Unit Execution Policy](docs/agent-policies/work-unit-execution.md)가
+authoritative하다.
 
 ## Implementation scope
 
@@ -76,77 +90,24 @@ git submodule update --init --recursive
   읽고 따른다.
 - 그 정지 조건에 해당하면 구현을 멈추고, 추가 구조가 왜 필요한지 먼저 보고한다.
 
+## Contract interpretation
+
+Contract, Schema, Institution Design을 기존 구현이나 테스트에 맞추기 위해 임의로
+재해석하거나 약화하지 않는다. 구현을 계약에 맞게 고치거나, 고칠 수 없으면 충돌을
+`확인 필요`로 보고한다. 계약별 책임 경계와 해석 규칙은
+[Template authoring contracts](docs/contracts/template-authoring-contracts.md)가
+authoritative하다.
+
 ## Test and build requirements
 
 - Git `HEAD`의 현재 코드와 자동화 테스트가 현재 동작의 최우선 근거다.
-- 실행 동작을 추가·변경·수정·제거하는 모든 작업은 그 작업 전용의 새 자동화 테스트를
-  최소 하나 만들고 실행해야 한다. 기존 테스트를 재사용하거나 수정하는 것만으로는
-  충족되지 않는다.
-- 모든 동작 변경 작업은 [Task-Scoped Testing Policy](docs/agent-policies/task-scoped-testing.md)를
-  읽고 따른다. 이 정책 파일이 없거나 읽을 수 없으면 작업을 중단하고 보고한다.
-- 초점 테스트 → 직접 영향받는 테스트 → 요청된 전체 테스트 순으로 실행한다.
-- 실행한 정확한 검증 명령과 결과를 실패·경고까지 포함해 보고한다.
-- 관련 테스트가 하나라도 실패하거나 경고하면 `검증됨`, `사용 가능`, `완료`라고
-  보고하지 않는다.
+- 실행 동작을 추가·변경·수정·제거하는 모든 작업은
+  [Task-Scoped Testing Policy](docs/agent-policies/task-scoped-testing.md)를 읽고
+  따른다. 이 정책 파일이 없거나 읽을 수 없으면 작업을 중단하고 보고한다.
 - 최종 HWPX 출력은 strict `hwpx.validate_package`와
   [HWPX template rendering policy](docs/agent-policies/hwpx-template-rendering.md)가
   정의한 의미·구조 검사를 통과해야 한다.
 - strict 검증 통과는 시각적 충실도나 기관 승인을 뜻하지 않는다.
-
-### 해결된 회귀
-
-`tests/task_scoped/test_fss_one_page_final_rendering.py::test_one_page_restores_table_cell_leading_fwspaces_after_skill_fill`
-와 같은 셀의 여러 text node를 함께 검증하는 작업 전용 테스트는 2026-08-11의
-`text_node_index` 단위 복원 수정으로 통과한다. 회귀 시 기대값을 바꾸지 말고 렌더러를 고친다.
-
-## Commands
-
-Windows PowerShell:
-
-```powershell
-git submodule update --init --recursive
-.\.venv\Scripts\python.exe -m pip install -r requirements-dev.txt
-
-# 승인 템플릿으로 문서 생성
-.\.venv\Scripts\python.exe scripts/templates/render_hwpx_template.py `
-  --institution <기관명> --document-type <문서유형> `
-  --content <content.json> --output <출력.hwpx> --requester-name <요청자>
-
-# 새 원본에서 후보 추출 + QA 왕복 검증
-.\.venv\Scripts\python.exe scripts/templates/qa_hwpx_template.py `
-  --source <원본.hwpx> --output-dir <후보 폴더> `
-  --institution <기관명> --document-type <문서유형>
-
-# 사람이 승인한 후보 등록
-.\.venv\Scripts\python.exe scripts/templates/register_hwpx_template.py --candidate <후보 폴더> --approve
-
-.\.venv\Scripts\python.exe -m pytest tests/ -q --basetemp=sandbox/pytest
-```
-
-macOS/Linux Bash:
-
-```bash
-git submodule update --init --recursive
-./.venv/bin/python -m pip install -r requirements-dev.txt
-
-./.venv/bin/python scripts/templates/render_hwpx_template.py \
-  --institution <기관명> --document-type <문서유형> \
-  --content <content.json> --output <출력.hwpx> --requester-name <요청자>
-
-./.venv/bin/python scripts/templates/qa_hwpx_template.py \
-  --source <원본.hwpx> --output-dir <후보 폴더> \
-  --institution <기관명> --document-type <문서유형>
-
-./.venv/bin/python scripts/templates/register_hwpx_template.py --candidate <후보 폴더> --approve
-./.venv/bin/python -m pytest tests/ -q --basetemp=sandbox/pytest
-```
-
-CI는 설치 Python을 3.13으로 고정한 뒤 운영체제별 venv 경로 대신 다음을 사용한다.
-
-```bash
-python -m pip install -r requirements-dev.txt
-python -m pytest tests/ -q --basetemp=sandbox/pytest
-```
 
 ## Documentation changes
 
@@ -157,81 +118,19 @@ python -m pytest tests/ -q --basetemp=sandbox/pytest
 참조된 정책 파일이 없거나 읽을 수 없으면 문서 작업을 중단하고 누락을 보고한다.
 정책이 확보될 때까지 어떤 문서도 수정하지 않는다.
 
-## Project goal
+## Commands
 
-This repository has two top-level E2E workflows.
+운영·개발 명령은 [README](README.md)의 `운영 매뉴얼`이 소유하고, 스크립트별 역할과
+경계는 [scripts/AGENTS.md](scripts/AGENTS.md)가 소유한다. 저장소 전체 검증은 다음
+명령이다.
 
-1. `TEMPLATE_CREATE`
-   - Create a new reusable HWPX template.
-   - The template may be authored from user requirements and layout knowledge,
-     or extracted from an exact existing HWPX source.
-   - Both paths converge on candidate QA, human review, human approval, and
-     approved-template registration.
+```bash
+python -m pytest tests/ -q --basetemp=sandbox/pytest
+```
 
-2. `DOCUMENT_RENDER`
-   - Resolve an approved template.
-   - Interpret and validate the supplied document content.
-   - Render the final HWPX while preserving the approved template contract.
+## Concurrent work
 
-The canonical end-to-end workflow is defined in
-`docs/product-workflow-contract.md`.
-
-Source-based candidate extraction and approved-template rendering details are
-defined in
-`docs/agent-policies/hwpx-template-rendering.md`.
-
-Do not treat the source-based extraction route as the whole TEMPLATE_CREATE
-workflow.
-
-## Work-unit execution contract
-
-Every scoped project task must have an explicit task contract before
-substantive work begins.
-
-This applies to:
-- investigation and analysis
-- planning
-- E2E or architecture changes
-- contract and schema changes
-- documentation changes
-- implementation
-- testing
-- migration
-
-Before starting a task, read in this order:
-
-1. this root `AGENTS.md`;
-2. `docs/product-workflow-contract.md`;
-3. the active task contract in `tasks/`;
-4. only the policies, references, and source files required by that task.
-
-The active task contract MUST declare its authority over the parent system
-contract.
-
-A task must state one of these:
-
-- `PRESERVE`: the parent E2E/system contract must not be changed.
-- `REVISE`: the task may revise explicitly named portions of the parent
-  E2E/system contract.
-
-`REVISE` does not permit unrestricted redesign. The task contract must name
-the exact workflow, sections, decisions, or boundaries it is allowed to
-change.
-
-When work discovers a new issue, classify it as:
-
-- `BLOCKER`: required to satisfy the current task's completion criteria.
-- `FOLLOW-UP`: valid issue, but not required to complete the current task.
-- `OUT_OF_SCOPE`: unrelated to the current task.
-
-Do not automatically expand the current task because a new issue was found.
-
-If a discovered issue proves that the active task contract itself is wrong or
-incomplete, stop only the affected work, record the issue, revise the task
-contract with human approval, and then continue.
-
-A task is DONE when its declared completion criteria are satisfied.
-Remaining FOLLOW-UP items do not prevent the task from closing.
-
-An open issue in `docs/product-workflow-contract.md` is not automatically a
-BLOCKER for every task.
+- 작업 시작 시 `git status`와 관련 diff를 확인한다.
+- unrelated change를 reset, revert, checkout, 삭제하지 않는다.
+- dirty working tree, 첫 테스트 실패, 변경 범위 확대, LSP 부재는 단독으로 작업 중단 사유가 아니다.
+- 현재 상태 위에서 요청 범위의 최소 변경을 적용하고, 실패가 현재 변경 때문인지 가능한 범위에서 구분한다.

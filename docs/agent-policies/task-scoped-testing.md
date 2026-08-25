@@ -12,6 +12,7 @@ This policy applies to every task that changes executable behavior.
 - If an existing test fails and its requirement did not change, fix the implementation rather than the test.
 - Without the required new test, `구현됨`, `검증됨`, `사용 가능`, and `완료` are `아니오`.
 - If any relevant test fails or warns, `검증됨`, `사용 가능`, and `완료` are `아니오`.
+- Run tests in this order: the focused new test, then the directly affected tests, then any full test run the request asked for.
 - Non-behavioral documentation, comment, spelling, and formatting changes are exempt.
 
 The completion report MUST include:
@@ -22,3 +23,18 @@ The completion report MUST include:
 - affected regression-test commands and results
 - every failure or warning
 - the reason for modifying any existing test
+
+## Relevant verification
+
+A changed behavior or contract boundary gets a new regression test. When the
+change touches one of the following, verify it directly rather than inferring
+it from a passing suite:
+
+- collection cardinality 0 / 1 / N
+- no `FIXED` element rendered as a placeholder
+- fail-fast on an invalid contract
+- no unresolved placeholder in the final HWPX
+- strict package validation and round-trip validation
+- the approved package is actually usable as renderer input
+
+This list is conditional. It is not a checklist that every change must run.
