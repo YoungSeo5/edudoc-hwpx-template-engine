@@ -46,6 +46,7 @@ from .hwpx_template_authoring import (
     ResolvedAuthoringContract,
     ResolvedBodySection,
     ResolvedInfoTableSection,
+    ResolvedSimpleTableSection,
     ResolvedLogo,
     ResolvedMasthead,
     ResolvedSection,
@@ -53,6 +54,7 @@ from .hwpx_template_authoring import (
     ResolvedTextStyle,
     ResolvedTitleSection,
     Section,
+    SimpleTableSection,
     TemplateSpec,
     TitleSection,
     _VALID_ALIGNS,
@@ -99,7 +101,19 @@ _MASTHEAD_REQUIRED_WHEN_ACTIVE = (
     "slots",
     "row_count",
 )
+#: masthead-structural-ownership task: the only row count this authoring
+#: version can materialize. Bounded, not an institution decision — same kind
+#: of capability boundary as ``_MASTHEAD_SLOT_ROLES``. Still a required,
+#: explicit contract declaration (not a Python literal in
+#: ``_materialize_masthead()``) so a design that (today, mistakenly) declares
+#: any other value fails fast at resolve() instead of being silently ignored.
 _MASTHEAD_SUPPORTED_ROW_COUNT = 1
+#: masthead-structural-ownership task: the closed set of slot roles this
+#: authoring version knows how to materialize. Exactly these three, exactly
+#: once each — a capability boundary of this version (like TemplateSpec's
+#: fixed section-type tuple), not an institution decision. Which column each
+#: role occupies (left-to-right order) *is* the institution's decision and
+#: comes from ``masthead.slots``.
 _MASTHEAD_SLOT_ROLES = frozenset({"logo_left", "title", "logo_right"})
 #: 세 칸 폭 합이 masthead.width_mm과 벌어질 수 있는 최대 오차(mm) — 부동소수
 #: 반올림만 허용하고, "대략 맞음"은 통과시키지 않는다.
@@ -108,7 +122,7 @@ _CELL_MARGIN_SIDES = ("left", "right", "top", "bottom")
 
 #: Decision 1의 확정 allow-list. 기관 정체성 값(font_family/color/bold/표
 #: border/표 label·value role 참조)은 여기 없다 — 문서가 override할 수 없다.
-_TEXT_OVERRIDE_ALLOWED_KEYS = frozenset({"size_pt", "align"})
+_TEXT_OVERRIDE_ALLOWED_KEYS = frozenset({"size_pt", "align", "marker"})
 _TABLE_OVERRIDE_ALLOWED_KEYS = frozenset({"width_mm"})
 
 
@@ -247,6 +261,11 @@ def _parse_institution_text_role(name: str, value: Any) -> dict[str, Any]:
         if not isinstance(marker, str) or not marker:
             raise HwpxAuthoringResolveError(f"defaults.styles.{name}.marker must be a non-empty string")
         parsed["marker"] = marker
+    if "keep_with_next" in value and value["keep_with_next"] is not None:
+        keep_with_next = value["keep_with_next"]
+        if not isinstance(keep_with_next, bool):
+            raise HwpxAuthoringResolveError(f"defaults.styles.{name}.keep_with_next must be a boolean")
+        parsed["keep_with_next"] = keep_with_next
     return parsed
 
 
@@ -280,7 +299,7 @@ def _parse_institution_table_role(name: str, value: Any) -> dict[str, Any]:
             f"defaults.table.{name}.label_width_ratio must be a number strictly between 0 and 1"
         )
 
-    return {
+    parsed = {
         "width_mm": _parse_positive_number(f"defaults.table.{name}.width_mm", value["width_mm"]),
         "border_width_mm": _parse_positive_number(
             f"defaults.table.{name}.border_width_mm", value["border_width_mm"]
@@ -290,6 +309,11 @@ def _parse_institution_table_role(name: str, value: Any) -> dict[str, Any]:
         "value_style_role": value_style_role,
         "label_width_ratio": float(label_width_ratio),
     }
+    if "cell_margin_mm" in value and value["cell_margin_mm"] is not None:
+        parsed["cell_margin_mm"] = _parse_cell_margin(
+            f"defaults.table.{name}.cell_margin_mm", value["cell_margin_mm"]
+        )
+    return parsed
 
 
 def _parse_institution_masthead(value: Any) -> dict[str, Any]:
@@ -562,6 +586,25 @@ def _resolve_section(
             heading_text=entry.heading_text,
             field_id=entry.field_id,
             sample_value=entry.sample_value,
+            hierarchy_items=entry.hierarchy_items,
+        )
+    if isinstance(entry, SimpleTableSection):
+        table_style = _resolve_table_role(
+            tables,
+            styles,
+            entry.style,
+            entry.style_override,
+            {},
+            {},
+        )
+        return ResolvedSimpleTableSection(
+            style=table_style,
+            header=entry.header,
+            column_widths=entry.column_widths,
+            rows=entry.rows,
+            collection_field_id=entry.collection_field_id,
+            item_fields=entry.item_fields,
+            header_element_ids=entry.header_element_ids,
         )
     if isinstance(entry, InfoTableSection):
         table_style = _resolve_table_role(
@@ -572,7 +615,11 @@ def _resolve_section(
             entry.label_style_override,
             entry.value_style_override,
         )
-        return ResolvedInfoTableSection(style=table_style, rows=entry.rows)
+        return ResolvedInfoTableSection(
+            style=table_style,
+            rows=entry.rows,
+            pairs_per_row=entry.pairs_per_row,
+        )
     raise HwpxAuthoringResolveError(f"unhandled section type: {entry!r}")  # pragma: no cover
 
 
@@ -607,6 +654,13 @@ def _resolve_text_role(
                 f"{context} style_override.align must be one of {_VALID_ALIGNS}, got {align!r}"
             )
         merged["align"] = align
+    if "marker" in override:
+        marker = override["marker"]
+        if not isinstance(marker, str) or not marker:
+            raise HwpxAuthoringResolveError(
+                f"{context} style_override.marker must be a non-empty string"
+            )
+        merged["marker"] = marker
 
     missing = [key for key in _TEXT_ROLE_REQUIRED if merged.get(key) is None]
     if missing:
@@ -625,8 +679,10 @@ def _resolve_text_role(
         spacing_before_pt=merged.get("spacing_before_pt"),
         spacing_after_pt=merged.get("spacing_after_pt"),
         indent_left_mm=merged.get("indent_left_mm"),
+        native_intent_hwpunit=None,
         heading_rule_width_mm=merged.get("heading_rule_width_mm"),
         marker=merged.get("marker"),
+        keep_with_next=bool(merged.get("keep_with_next", False)),
     )
 
 
@@ -684,6 +740,7 @@ def _resolve_table_role(
         label_style=label_style,
         value_style=value_style,
         label_width_ratio=float(merged["label_width_ratio"]),
+        cell_margin_mm=merged.get("cell_margin_mm"),
     )
 
 

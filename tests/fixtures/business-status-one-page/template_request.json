@@ -1,0 +1,29 @@
+{
+  "template_request_version": "v1",
+  "request_id": "business-status-one-page-request-v1",
+  "institution": "edudoc",
+  "document_type": "사업 추진현황 1페이지 보고서",
+  "purpose": "사업의 현재 추진상태, 핵심 과제, 이슈와 향후 조치를 한 페이지에서 의사결정자에게 보고한다.",
+  "requested_items": [
+    { "request_item_id": "as_of", "description": "기준일", "must_include": true },
+    { "request_item_id": "lead_department", "description": "주관 부서", "must_include": true },
+    { "request_item_id": "project_name", "description": "사업명", "must_include": true },
+    { "request_item_id": "project_manager", "description": "담당자", "must_include": true },
+    { "request_item_id": "project_period", "description": "추진 기간", "must_include": true },
+    { "request_item_id": "summary", "description": "핵심 현황", "must_include": true },
+    { "request_item_id": "project_tasks", "description": "주요 추진 과제", "must_include": false },
+    { "request_item_id": "results", "description": "주요 성과 및 진척", "must_include": true },
+    { "request_item_id": "risk_summary", "description": "이슈 및 대응", "must_include": true },
+    { "request_item_id": "next_actions_summary", "description": "향후 조치 요약", "must_include": true },
+    { "request_item_id": "next_actions", "description": "향후 조치", "must_include": false },
+    { "request_item_id": "decision_request", "description": "의사결정·협조 요청", "must_include": true }
+  ],
+  "fixed_text": ["사업 추진현황 1페이지 보고서"],
+  "design_requirements": ["A4 세로", "1페이지", "기존 분석 HWPX evidence를 일반화"],
+  "reference_scope": {
+    "mode": "existing_analyzed_hwpx_evidence",
+    "primary": "docs/hwpx-layout-baseline.md group A",
+    "exact_target_source": null
+  },
+  "constraints": ["exact source HWPX 없음", "candidate 상태 유지", "사람 승인 전 등록 금지"]
+}

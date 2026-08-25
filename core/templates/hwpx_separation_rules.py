@@ -46,6 +46,7 @@ class LocationRule:
     table: int | None = None
     row: int | None = None
     col: int | None = None
+    prototype_level: int | None = None
 
     def matches(self, location: TextLocation) -> bool:
         return (
@@ -73,6 +74,16 @@ class SeparationRules:
         }
         if len(matched) > 1:
             raise SeparationRuleError(Path(location.section), "conflicting canonical field_id rules")
+        return next(iter(matched), None)
+
+    def prototype_level_for(self, location: TextLocation) -> int | None:
+        matched = {
+            rule.prototype_level
+            for rule in self.rules
+            if rule.matches(location) and rule.prototype_level is not None
+        }
+        if len(matched) > 1:
+            raise SeparationRuleError(Path(location.section), "conflicting prototype level rules")
         return next(iter(matched), None)
 
     def semantic_role_for(
@@ -141,6 +152,7 @@ def _parse_rule(path: Path, item: JsonValue) -> LocationRule:
         table=_optional_int(path, item.get("table"), "table"),
         row=_optional_int(path, item.get("row"), "row"),
         col=_optional_int(path, item.get("col"), "col"),
+        prototype_level=_optional_int(path, item.get("prototype_level"), "prototype_level"),
     )
     if all(value is None for value in (selector.text_node_index, selector.table, selector.row, selector.col)):
         raise SeparationRuleError(path, "a rule must include at least one location selector")

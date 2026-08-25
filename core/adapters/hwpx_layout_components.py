@@ -49,6 +49,31 @@ def expand_family_components(
             continue
         if component_type == "title_block":
             sections.append({**values, "type": "title"})
+        elif component_type == "header_info":
+            sections.extend(_expand_header_info(index, values))
+        elif component_type == "status_table" and values.get("display") == "section":
+            rows = values.get("rows")
+            if not isinstance(rows, list) or len(rows) != 1 or not isinstance(rows[0], dict):
+                raise HwpxLayoutComponentError(
+                    f"components[{index}].rows must contain one status row when display='section'"
+                )
+            row = rows[0]
+            sections.append(
+                {
+                    "type": "body_section",
+                    "heading_style": values.get("heading_style"),
+                    "heading_style_override": values.get("heading_style_override", {}),
+                    "body_style": values.get("body_style"),
+                    "body_style_override": values.get("body_style_override", {}),
+                    "heading_element_id": row.get("label_element_id"),
+                    "content_element_id": row.get("value_element_id"),
+                    "heading_text": row.get("label"),
+                    "field_id": row.get("field_id"),
+                    "sample_value": row.get("sample_value"),
+                }
+            )
+        elif component_type == "status_table" and values.get("display") == "simple_table":
+            sections.append({**values, "type": "simple_table"})
         elif component_type in _TABLE_COMPONENTS:
             sections.append({**values, "type": "info_table"})
         elif component_type in _BODY_COMPONENTS:
@@ -57,6 +82,60 @@ def expand_family_components(
     if missing:
         raise HwpxLayoutComponentError(f"template_spec.components is missing required family component(s): {missing}")
     return sections, tuple(component_types)
+
+
+def _expand_header_info(index: int, values: Mapping[str, Any]) -> list[dict[str, Any]]:
+    groups = values.get("row_groups")
+    if groups is None:
+        return [{**values, "type": "info_table"}]
+    rows = values.get("rows")
+    if not isinstance(rows, list):
+        raise HwpxLayoutComponentError(f"components[{index}].rows must be a list")
+    if not isinstance(groups, list) or not groups:
+        raise HwpxLayoutComponentError(f"components[{index}].row_groups must be a non-empty list")
+    group_definitions: list[dict[str, Any]] = []
+    row_counts: list[int] = []
+    for group_index, group in enumerate(groups):
+        if not isinstance(group, dict):
+            raise HwpxLayoutComponentError(
+                f"components[{index}].row_groups[{group_index}] must be an object"
+            )
+        row_count = group.get("row_count")
+        if not isinstance(row_count, int) or isinstance(row_count, bool) or row_count <= 0:
+            raise HwpxLayoutComponentError(
+                f"components[{index}].row_groups[{group_index}].row_count must be a positive integer"
+            )
+        group_definitions.append(group)
+        row_counts.append(row_count)
+    if sum(row_counts) != len(rows):
+        raise HwpxLayoutComponentError(
+            f"components[{index}].row_groups must consume every metadata row exactly once"
+        )
+    offset = 0
+    sections: list[dict[str, Any]] = []
+    for group, row_count in zip(group_definitions, row_counts, strict=True):
+        group_rows = rows[offset:offset + row_count]
+        if len(group_rows) != row_count:
+            raise HwpxLayoutComponentError(
+                f"components[{index}].row_groups does not match the declared metadata rows"
+            )
+        sections.append(
+            {
+                **values,
+                **group,
+                "type": "info_table",
+                "rows": group_rows,
+            }
+        )
+        offset += row_count
+    if offset != len(rows):
+        raise HwpxLayoutComponentError(
+            f"components[{index}].row_groups does not consume every metadata row"
+        )
+    for section in sections:
+        section.pop("row_groups", None)
+        section.pop("row_count", None)
+    return sections
 
 
 def _load_recipe(path: Path, family: str) -> dict[str, Any]:

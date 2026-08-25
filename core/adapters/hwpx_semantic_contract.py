@@ -9,6 +9,7 @@ from typing import Any
 from .hwpx_template_authoring import (
     BodySection,
     InfoTableSection,
+    SimpleTableSection,
     TemplateSpec,
     TitleSection,
     load_template_spec,
@@ -28,6 +29,7 @@ class SemanticElement:
     required: bool | None
     cardinality: str | None
     content_type: str | None
+    item_fields: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True, slots=True)
@@ -81,9 +83,28 @@ def bind_semantic_contract(contract: SemanticContract, spec: TemplateSpec) -> Se
                 for row_index, row in enumerate(section.rows):
                     placements.append(_fixed_placement(by_element, row.label_element_id, row.label, "FIXED_LABEL", index, row_index))
                     placements.append(_content_placement(by_field, row.field_id, index, row_index))
+            case SimpleTableSection():
+                for header_index, (element_id, text) in enumerate(zip(section.header_element_ids, section.header, strict=True)):
+                    placements.append(_fixed_placement(by_element, element_id, text, "FIXED_LABEL", index, header_index))
+                placements.extend(
+                    _collection_placement(by_field, section.collection_field_id, item_field, index, column_index)
+                    for column_index, item_field in enumerate(section.item_fields)
+                )
             case BodySection():
-                placements.append(_fixed_placement(by_element, section.heading_element_id, section.heading_text, "FIXED_LABEL", index))
-                placements.append(_content_placement(by_field, section.field_id, index))
+                if section.hierarchy_items:
+                    for item_index, item in enumerate(section.hierarchy_items):
+                        placement = _collection_placement(
+                            by_field,
+                            section.field_id,
+                            section.hierarchy_item_field,
+                            index,
+                            item_index,
+                        )
+                        placement["prototype_level"] = str(item.level)
+                        placements.append(placement)
+                else:
+                    placements.append(_fixed_placement(by_element, section.heading_element_id, section.heading_text, "FIXED_LABEL", index))
+                    placements.append(_content_placement(by_field, section.field_id, index))
     placed_elements = {placement["element_id"] for placement in placements}
     missing_required = [
         element.field_id
@@ -130,11 +151,38 @@ def validate_candidate_field_identity(contract: SemanticContract, candidate_dir:
     fields = raw.get("fields") if isinstance(raw, dict) else None
     if not isinstance(fields, list):
         raise SemanticContractError("candidate placeholder_map.json requires a fields list")
-    actual = {item.get("field_id") for item in fields if isinstance(item, dict)}
-    expected = {element.field_id for element in contract.elements if element.role == "CONTENT"}
-    if actual != expected:
+    actual = {item.get("field_id") for item in fields if isinstance(item, dict) and isinstance(item.get("field_id"), str)}
+    scalar_fields = {
+        element.field_id
+        for element in contract.elements
+        if element.role == "CONTENT" and not element.item_fields
+    }
+    collection_fields = {
+        element.field_id: set(element.item_fields)
+        for element in contract.elements
+        if element.role == "CONTENT" and element.item_fields
+    }
+    projected = {
+        field_id
+        for field_id in actual
+        if any(field_id.startswith(f"{collection_id}[") for collection_id in collection_fields)
+    }
+    invalid_projected = {
+        field_id
+        for field_id in projected
+        if not any(
+            field_id.startswith(f"{collection_id}[") and field_id.rsplit(".", 1)[-1] in item_fields
+            for collection_id, item_fields in collection_fields.items()
+        )
+    }
+    missing_collections = {
+        collection_id
+        for collection_id in collection_fields
+        if not any(field_id.startswith(f"{collection_id}[") for field_id in projected)
+    }
+    if actual - projected != scalar_fields or invalid_projected or missing_collections:
         raise SemanticContractError(
-            f"candidate placeholder field IDs do not match semantic contract: expected {sorted(expected)}, got {sorted(actual)}"
+            f"candidate placeholder field IDs do not match semantic contract: scalar={sorted(scalar_fields)}, got={sorted(actual)}"
         )
 
 
@@ -158,6 +206,9 @@ def persist_candidate_contract_artifacts(staging_dir: Path | str, candidate_dir:
     validate_candidate_field_identity(semantic, candidate)
     for name in required:
         shutil.copy2(staging / name, candidate / name)
+    family_recipe = staging / "family_recipe.json"
+    if family_recipe.is_file():
+        shutil.copy2(family_recipe, candidate / family_recipe.name)
     return {name.removesuffix(".json"): str(candidate / name) for name in required}
 
 
@@ -178,9 +229,14 @@ def _parse_element(raw: object, index: int) -> SemanticElement:
         required = raw.get("required")
         cardinality = raw.get("cardinality")
         content_type = raw.get("content_type")
-        if not isinstance(required, bool) or cardinality not in {"one", "many"} or content_type not in {"text", "date", "choice"}:
+        item_fields_raw = raw.get("item_fields", [])
+        if not isinstance(required, bool) or cardinality not in {"one", "many"}:
             raise SemanticContractError(f"invalid CONTENT semantic element: {element_id}")
-        return SemanticElement(element_id, role, None, field_id, required, cardinality, content_type)
+        if content_type == "object" and cardinality == "many" and isinstance(item_fields_raw, list) and item_fields_raw and all(isinstance(value, str) and value for value in item_fields_raw):
+            return SemanticElement(element_id, role, None, field_id, required, cardinality, content_type, tuple(item_fields_raw))
+        if content_type in {"text", "date", "choice"} and not item_fields_raw:
+            return SemanticElement(element_id, role, None, field_id, required, cardinality, content_type)
+        raise SemanticContractError(f"invalid CONTENT semantic element: {element_id}")
     if role not in {"FIXED_LABEL", "FIXED_TEXT"}:
         raise SemanticContractError(f"semantic element {element_id!r} has unsupported role {role!r}")
     return SemanticElement(element_id, role, _required_string(raw, "text"), None, None, None, None)
@@ -226,3 +282,12 @@ def _content_placement(
     if row_index is not None:
         placement["row_index"] = str(row_index)
     return placement
+
+
+def _collection_placement(
+    by_field: dict[str, SemanticElement], field_id: str, item_field: str, section_index: int, materialized_index: int
+) -> dict[str, str]:
+    element = by_field.get(field_id)
+    if element is None or item_field not in element.item_fields:
+        raise SemanticContractError(f"template_spec collection binding is absent from semantic contract: {field_id!r}.{item_field}")
+    return {"element_id": element.element_id, "role": "CONTENT", "field_id": field_id, "item_field": item_field, "section_index": str(section_index), "materialized_index": str(materialized_index)}

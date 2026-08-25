@@ -49,7 +49,7 @@ import os
 import subprocess
 import xml.etree.ElementTree as ET
 import zipfile
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Any, Literal, Mapping, Union
 
@@ -67,8 +67,18 @@ _HWPUNIT_PER_MM = 7200 / 25.4
 _VALID_ALIGNS = ("left", "center")
 _MARGIN_KEYS = ("left", "right", "top", "bottom", "header", "footer")
 _REQUIRED_MARGIN_KEYS = ("left", "right", "top", "bottom")
-_SECTION_TYPES = ("title", "info_table", "body_section")
+_SECTION_TYPES = ("title", "info_table", "simple_table", "body_section")
 
+# masthead는 1행 [로고/문서명/로고] 3-슬롯 표다(institution-design-contract-v1
+# 2026-08-18 사용자 결정). 어떤 칸이 어떤 role(logo_left/title/logo_right)인지는
+# 더 이상 이 모듈의 상수가 아니다 — Institution Design Contract의
+# ``masthead.slots``(왼쪽→오른쪽 role 순서)를 그대로 읽어 materialize한다
+# (masthead-structural-ownership task, 확인 필요 시
+# docs/tasks/masthead-structural-ownership.md 참고). 행 개수도 ``masthead.
+# row_count`` 선언에서 오지 이 모듈의 리터럴이 아니다 — 다만 이 버전이
+# 지원하는 값은 1뿐이고(resolve()가 그 외 값을 거부한다), 정확히 이 3개
+# role 각 1개라는 것도 이 authoring 버전의 capability 한계이지 institution이
+# 자유롭게 늘리거나 줄일 수 있는 값이 아니다.
 _HP_NS = "http://www.hancom.co.kr/hwpml/2011/paragraph"
 
 
@@ -109,7 +119,30 @@ class InfoTableSection:
     label_style_override: Mapping[str, Any]
     value_style_override: Mapping[str, Any]
     rows: tuple[InfoTableRow, ...]
+    pairs_per_row: int = 1
     type: Literal["info_table"] = "info_table"
+
+
+@dataclass(frozen=True, slots=True)
+class SimpleTableSection:
+    style: str
+    style_override: Mapping[str, Any]
+    header: tuple[str, ...]
+    column_widths: tuple[float, ...]
+    rows: tuple[tuple[str, ...], ...]
+    collection_field_id: str
+    item_fields: tuple[str, ...]
+    header_element_ids: tuple[str, ...]
+    type: Literal["simple_table"] = "simple_table"
+
+
+@dataclass(frozen=True, slots=True)
+class HierarchyItem:
+    level: int
+    text: str
+    marker: str
+    native_intent_hwpunit: int
+    line_spacing_percent: float
 
 
 @dataclass(frozen=True, slots=True)
@@ -121,12 +154,14 @@ class BodySection:
     heading_text: str
     field_id: str
     sample_value: str
+    hierarchy_items: tuple[HierarchyItem, ...] = ()
+    hierarchy_item_field: str = ""
     heading_element_id: str = ""
     content_element_id: str = ""
     type: Literal["body_section"] = "body_section"
 
 
-Section = Union[TitleSection, InfoTableSection, BodySection]
+Section = Union[TitleSection, InfoTableSection, SimpleTableSection, BodySection]
 
 
 @dataclass(frozen=True, slots=True)
@@ -259,6 +294,8 @@ def _parse_sections(raw: Any) -> tuple[Section, ...]:
             for row in info_table.rows:
                 _check_duplicate_field_id(index, row.field_id, seen_field_ids)
             sections.append(info_table)
+        elif section_type == "simple_table":
+            sections.append(_parse_simple_table_section(index, item))
         else:
             body = _parse_body_section(index, item)
             _check_duplicate_field_id(index, body.field_id, seen_field_ids)
@@ -348,12 +385,16 @@ def _parse_info_table_section(index: int, item: Mapping[str, Any]) -> InfoTableS
                 sample_value=sample_value,
             )
         )
+    pairs_per_row = item.get("pairs_per_row", 1)
+    if not isinstance(pairs_per_row, int) or isinstance(pairs_per_row, bool) or pairs_per_row not in {1, 2}:
+        raise HwpxTemplateAuthoringError(f"sections[{index}].pairs_per_row must be 1 or 2")
     return InfoTableSection(
         style=style,
         style_override=style_override,
         label_style_override=label_style_override,
         value_style_override=value_style_override,
         rows=tuple(rows),
+        pairs_per_row=pairs_per_row,
     )
 
 
@@ -366,7 +407,9 @@ def _parse_body_section(index: int, item: Mapping[str, Any]) -> BodySection:
     content_element_id = _optional_section_str(index, item, "content_element_id")
     heading_text = _require_nonempty_str(index, item, "heading_text")
     field_id = _require_nonempty_str(index, item, "field_id")
-    sample_value = _require_nonempty_str(index, item, "sample_value")
+    hierarchy_items = _parse_hierarchy_items(index, item)
+    hierarchy_item_field = _optional_section_str(index, item, "hierarchy_item_field") if hierarchy_items else ""
+    sample_value = "" if hierarchy_items else _require_nonempty_str(index, item, "sample_value")
     return BodySection(
         heading_style=heading_style,
         heading_style_override=heading_style_override,
@@ -377,7 +420,89 @@ def _parse_body_section(index: int, item: Mapping[str, Any]) -> BodySection:
         heading_text=heading_text,
         field_id=field_id,
         sample_value=sample_value,
+        hierarchy_items=hierarchy_items,
+        hierarchy_item_field=hierarchy_item_field,
     )
+
+
+def _parse_simple_table_section(index: int, item: Mapping[str, Any]) -> SimpleTableSection:
+    style = _require_style_ref(index, item, "style")
+    style_override = _parse_style_override(index, item, "style_override")
+    header_raw = item.get("header", [])
+    widths_raw = item.get("column_widths")
+    rows_raw = item.get("rows")
+    collection_field_id = _require_nonempty_str(index, item, "collection_field_id")
+    item_fields_raw = item.get("item_fields")
+    header_element_ids_raw = item.get("header_element_ids")
+    if not isinstance(header_raw, list) or any(not isinstance(cell, str) or not cell for cell in header_raw):
+        raise HwpxTemplateAuthoringError(f"sections[{index}].header must be a list of non-empty strings")
+    if not isinstance(widths_raw, list) or not widths_raw or any(
+        not isinstance(width, (int, float)) or isinstance(width, bool) or width <= 0 for width in widths_raw
+    ):
+        raise HwpxTemplateAuthoringError(f"sections[{index}].column_widths must contain positive numbers")
+    if not isinstance(rows_raw, list) or not rows_raw:
+        raise HwpxTemplateAuthoringError(f"sections[{index}].rows must be a non-empty list")
+    column_count = len(widths_raw)
+    if header_raw and len(header_raw) != column_count:
+        raise HwpxTemplateAuthoringError(f"sections[{index}].header must match column_widths length")
+    if not isinstance(item_fields_raw, list) or len(item_fields_raw) != column_count or any(not isinstance(value, str) or not value for value in item_fields_raw):
+        raise HwpxTemplateAuthoringError(f"sections[{index}].item_fields must match column_widths length")
+    if not isinstance(header_element_ids_raw, list) or len(header_element_ids_raw) != len(header_raw) or any(not isinstance(value, str) or not value for value in header_element_ids_raw):
+        raise HwpxTemplateAuthoringError(f"sections[{index}].header_element_ids must match header length")
+    rows: list[tuple[str, ...]] = []
+    for row_index, row in enumerate(rows_raw):
+        if not isinstance(row, list) or len(row) != column_count or any(
+            not isinstance(cell, str) or not cell for cell in row
+        ):
+            raise HwpxTemplateAuthoringError(
+                f"sections[{index}].rows[{row_index}] must contain one non-empty string per column"
+            )
+        rows.append(tuple(row))
+    return SimpleTableSection(
+        style=style,
+        style_override=style_override,
+        header=tuple(header_raw),
+        column_widths=tuple(float(width) for width in widths_raw),
+        rows=tuple(rows),
+        collection_field_id=collection_field_id,
+        item_fields=tuple(item_fields_raw),
+        header_element_ids=tuple(header_element_ids_raw),
+    )
+
+
+def _parse_hierarchy_items(index: int, item: Mapping[str, Any]) -> tuple[HierarchyItem, ...]:
+    if "hierarchy" not in item and "items" not in item:
+        return ()
+    geometry_raw = item.get("hierarchy")
+    items_raw = item.get("items")
+    if not isinstance(geometry_raw, list) or not geometry_raw or not isinstance(items_raw, list) or not items_raw:
+        raise HwpxTemplateAuthoringError(f"sections[{index}] hierarchy and items must be non-empty lists")
+    geometry: dict[int, tuple[str, int, float]] = {}
+    for geometry_index, entry in enumerate(geometry_raw):
+        if not isinstance(entry, dict):
+            raise HwpxTemplateAuthoringError(f"sections[{index}].hierarchy[{geometry_index}] must be an object")
+        level = entry.get("level")
+        marker = entry.get("marker")
+        intent = entry.get("native_intent_hwpunit")
+        spacing = entry.get("line_spacing_percent")
+        if not isinstance(level, int) or isinstance(level, bool) or level <= 0 or level in geometry:
+            raise HwpxTemplateAuthoringError(f"sections[{index}].hierarchy[{geometry_index}].level must be unique and positive")
+        if not isinstance(marker, str) or not marker or not isinstance(intent, int) or isinstance(intent, bool):
+            raise HwpxTemplateAuthoringError(f"sections[{index}].hierarchy[{geometry_index}] has invalid marker or native intent")
+        if not isinstance(spacing, (int, float)) or isinstance(spacing, bool) or spacing <= 0:
+            raise HwpxTemplateAuthoringError(f"sections[{index}].hierarchy[{geometry_index}].line_spacing_percent must be positive")
+        geometry[level] = (marker, intent, float(spacing))
+    items: list[HierarchyItem] = []
+    for item_index, entry in enumerate(items_raw):
+        if not isinstance(entry, dict):
+            raise HwpxTemplateAuthoringError(f"sections[{index}].items[{item_index}] must be an object")
+        level = entry.get("level")
+        text = entry.get("text")
+        if level not in geometry or not isinstance(text, str) or not text:
+            raise HwpxTemplateAuthoringError(f"sections[{index}].items[{item_index}] must select a declared level and text")
+        marker, intent, spacing = geometry[level]
+        items.append(HierarchyItem(level, text, marker, intent, spacing))
+    return tuple(items)
 
 
 def _optional_section_str(index: int, item: Mapping[str, Any], key: str) -> str:
@@ -422,19 +547,35 @@ def validate_semantic_placements(
                         by_element, row.value_element_id, "CONTENT", section_index, row_index, row.field_id
                     )
                     placements.append(placement)
+            case SimpleTableSection():
+                for column_index, element_id in enumerate(section.header_element_ids):
+                    placements.append(_semantic_placement(by_element, element_id, "FIXED_LABEL", section_index, column_index, None))
+                for column_index, item_field in enumerate(section.item_fields):
+                    placements.append(_semantic_collection_placement(by_element, section.collection_field_id, item_field, section_index, column_index))
             case BodySection():
-                placements.append(
-                    _semantic_placement(by_element, section.heading_element_id, "FIXED_LABEL", section_index, None, None)
-                )
-                placements.append(
-                    _semantic_placement(by_element, section.content_element_id, "CONTENT", section_index, None, section.field_id)
-                )
+                if section.hierarchy_items:
+                    for item_index, item in enumerate(section.hierarchy_items):
+                        placement = dict(
+                            _semantic_collection_placement(
+                                by_element,
+                                section.content_element_id,
+                                section.hierarchy_item_field,
+                                section_index,
+                                item_index,
+                            )
+                        )
+                        placement["prototype_level"] = str(item.level)
+                        placements.append(placement)
+                else:
+                    placements.append(_semantic_placement(by_element, section.heading_element_id, "FIXED_LABEL", section_index, None, None))
+                    placements.append(_semantic_placement(by_element, section.content_element_id, "CONTENT", section_index, None, section.field_id))
             case unreachable:
                 raise HwpxTemplateAuthoringError(f"unsupported TemplateSpec section: {unreachable!r}")
 
     placed_ids = [placement["element_id"] for placement in placements]
-    if len(placed_ids) != len(set(placed_ids)):
-        raise HwpxTemplateAuthoringError("each semantic contract element must be placed exactly once")
+    duplicated_fixed = [element_id for element_id in placed_ids if placed_ids.count(element_id) > 1 and by_element[element_id].get("role") != "CONTENT"]
+    if duplicated_fixed:
+        raise HwpxTemplateAuthoringError("each fixed semantic contract element must be placed exactly once")
     if set(placed_ids) != set(by_element):
         raise HwpxTemplateAuthoringError("TemplateSpec must place every semantic contract element exactly once")
     return tuple(placements)
@@ -468,6 +609,21 @@ def _semantic_placement(
     return result
 
 
+def _semantic_collection_placement(
+    by_element: Mapping[str, Mapping[str, Any]], element_id: str, item_field: str, section_index: int, materialized_index: int
+) -> Mapping[str, str]:
+    element = by_element.get(element_id)
+    if element is None or element.get("role") != "CONTENT" or element.get("content_type") != "object":
+        raise HwpxTemplateAuthoringError(f"semantic collection element {element_id!r} is not declared as structured CONTENT")
+    item_fields = element.get("item_fields")
+    if not isinstance(item_fields, list) or item_field not in item_fields:
+        raise HwpxTemplateAuthoringError(f"semantic collection element {element_id!r} does not declare item field {item_field!r}")
+    field_id = element.get("field_id")
+    if not isinstance(field_id, str):
+        raise HwpxTemplateAuthoringError(f"semantic collection element {element_id!r} has no canonical field_id")
+    return {"element_id": element_id, "role": "CONTENT", "field_id": field_id, "item_field": item_field, "section_index": str(section_index), "materialized_index": str(materialized_index)}
+
+
 # ---------------------------------------------------------------------------
 # Resolved Authoring Contract — "실제 HWPX 생성 직전, 모든 필요한 authoring
 # 값이 명시적으로 확정된 상태". core.adapters.hwpx_authoring_resolve.resolve()
@@ -487,8 +643,10 @@ class ResolvedTextStyle:
     spacing_before_pt: float | None = None
     spacing_after_pt: float | None = None
     indent_left_mm: float | None = None
+    native_intent_hwpunit: int | None = None
     heading_rule_width_mm: float | None = None
     marker: str | None = None
+    keep_with_next: bool = False
 
 
 @dataclass(frozen=True, slots=True)
@@ -499,6 +657,7 @@ class ResolvedTableStyle:
     label_style: ResolvedTextStyle
     value_style: ResolvedTextStyle
     label_width_ratio: float
+    cell_margin_mm: Mapping[str, float] | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -539,7 +698,14 @@ class ResolvedMasthead:
     logo_left_slot_width_mm: float
     title_slot_width_mm: float
     logo_right_slot_width_mm: float
+    # 왼쪽→오른쪽 column 순서로 나열한 role 이름
+    # ("logo_left"/"title"/"logo_right", 각 정확히 1개). 어느 칸이 어느
+    # role인지를 결정하는 유일한 source of truth다 — authoring은 이 순서를
+    # 그대로 읽어 column index를 계산할 뿐, 스스로 위치를 가정하지 않는다.
     slots: tuple[str, ...]
+    # 표의 행 개수 — 이 authoring 버전은 1만 지원하지만(resolve()가 검증),
+    # 그 사실 자체를 이 필드가 보존한다. `_materialize_masthead()`는 이 값을
+    # `_add_table(rows=...)`에 그대로 전달할 뿐 리터럴 `1`을 스스로 쓰지 않는다.
     row_count: int
 
 
@@ -554,7 +720,20 @@ class ResolvedTitleSection:
 class ResolvedInfoTableSection:
     style: ResolvedTableStyle
     rows: tuple[InfoTableRow, ...]
+    pairs_per_row: int = 1
     type: Literal["info_table"] = "info_table"
+
+
+@dataclass(frozen=True, slots=True)
+class ResolvedSimpleTableSection:
+    style: ResolvedTableStyle
+    header: tuple[str, ...]
+    column_widths: tuple[float, ...]
+    rows: tuple[tuple[str, ...], ...]
+    collection_field_id: str
+    item_fields: tuple[str, ...]
+    header_element_ids: tuple[str, ...]
+    type: Literal["simple_table"] = "simple_table"
 
 
 @dataclass(frozen=True, slots=True)
@@ -564,10 +743,11 @@ class ResolvedBodySection:
     heading_text: str
     field_id: str
     sample_value: str
+    hierarchy_items: tuple[HierarchyItem, ...] = ()
     type: Literal["body_section"] = "body_section"
 
 
-ResolvedSection = Union[ResolvedTitleSection, ResolvedInfoTableSection, ResolvedBodySection]
+ResolvedSection = Union[ResolvedTitleSection, ResolvedInfoTableSection, ResolvedSimpleTableSection, ResolvedBodySection]
 
 
 @dataclass(frozen=True, slots=True)
@@ -659,13 +839,30 @@ def generate_source_hwpx(resolved: ResolvedAuthoringContract, output_path: Path 
                 _materialize_paragraph(doc, section, entry.text, entry.style, skeleton_pool)
             elif isinstance(entry, ResolvedInfoTableSection):
                 _materialize_info_table(doc, section, entry, skeleton_pool)
+            elif isinstance(entry, ResolvedSimpleTableSection):
+                _materialize_simple_table(doc, section, entry, skeleton_pool)
             elif isinstance(entry, ResolvedBodySection):
-                _materialize_paragraph(
-                    doc, section, entry.heading_text, entry.heading_style, skeleton_pool
-                )
-                _materialize_paragraph(
-                    doc, section, entry.sample_value, entry.body_style, skeleton_pool
-                )
+                if entry.hierarchy_items:
+                    for item in entry.hierarchy_items:
+                        _materialize_paragraph(
+                            doc,
+                            section,
+                            item.text,
+                            replace(
+                                entry.body_style,
+                                marker=item.marker,
+                                native_intent_hwpunit=item.native_intent_hwpunit,
+                                line_spacing_percent=item.line_spacing_percent,
+                            ),
+                            skeleton_pool,
+                        )
+                else:
+                    _materialize_paragraph(
+                        doc, section, entry.heading_text, entry.heading_style, skeleton_pool
+                    )
+                    _materialize_paragraph(
+                        doc, section, entry.sample_value, entry.body_style, skeleton_pool
+                    )
             else:  # pragma: no cover - resolve() only ever builds the above
                 raise HwpxTemplateAuthoringError(f"unhandled section type: {entry!r}")
 
@@ -720,7 +917,7 @@ def _apply_paragraph_format(doc: Any, paragraph: Any, style: ResolvedTextStyle) 
         kwargs["spacing_before_pt"] = style.spacing_before_pt
     if style.spacing_after_pt is not None:
         kwargs["spacing_after_pt"] = style.spacing_after_pt
-    if style.indent_left_mm is not None:
+    if style.native_intent_hwpunit is None and style.indent_left_mm is not None:
         kwargs["indent_left_mm"] = style.indent_left_mm
     if style.heading_rule_width_mm is not None:
         # section heading 아래 구분선("heading rule") — role 자신의 color를
@@ -729,7 +926,18 @@ def _apply_paragraph_format(doc: Any, paragraph: Any, style: ResolvedTextStyle) 
         kwargs["bottom_border"] = True
         kwargs["border_color"] = style.color
         kwargs["border_width"] = f"{style.heading_rule_width_mm} mm"
+    if style.keep_with_next:
+        kwargs["keep_with_next"] = True
     doc.styles.apply_paragraph_format(**kwargs)
+    if style.native_intent_hwpunit is not None:
+        header = doc._root.headers[0]
+        left_margin = 0
+        if style.indent_left_mm is not None:
+            left_margin = round(style.indent_left_mm * _HWPUNIT_PER_MM)
+        paragraph.para_pr_id_ref = header.ensure_paragraph_format(
+            base_para_pr_id=paragraph.para_pr_id_ref,
+            margins={"left": left_margin, "intent": style.native_intent_hwpunit},
+        )
 
 
 def _materialize_paragraph(
@@ -815,35 +1023,84 @@ def _materialize_info_table(
         border_width=f"{style.border_width_mm} mm",
         border_color=style.border_color,
     )
+    table_rows = (len(entry.rows) + entry.pairs_per_row - 1) // entry.pairs_per_row
+    table_columns = 2 * entry.pairs_per_row
     table = _add_table(
         doc,
         section,
         skeleton_pool,
-        rows=len(entry.rows),
-        cols=2,
+        rows=table_rows,
+        cols=table_columns,
         border_fill_id_ref=border_fill_id,
         width=round(style.width_mm * _HWPUNIT_PER_MM),
     )
     # 고정 width/2, width/2 대신 institution이 정한 label:value 비율을 쓴다 —
     # "보고 기간 | 2026-08-04 ~ 2026-08-08"처럼 label이 짧고 value가 길 때
     # 둘을 반씩 나누면 label 열에 빈 공간이 크게 남는다.
-    table.set_column_widths([style.label_width_ratio, 1.0 - style.label_width_ratio])
+    table.set_column_widths(
+        [style.label_width_ratio, 1.0 - style.label_width_ratio] * entry.pairs_per_row
+    )
+    if style.cell_margin_mm is not None:
+        _set_table_cell_margin(table, style.cell_margin_mm)
     label_char_pr = _ensure_run_for_style(doc, style.label_style)
     value_char_pr = _ensure_run_for_style(doc, style.value_style)
     for row_index, row in enumerate(entry.rows):
-        table.set_cell_text(row_index, 0, row.label)
-        table.set_cell_text(row_index, 1, row.sample_value)
+        table_row = row_index // entry.pairs_per_row
+        label_column = 2 * (row_index % entry.pairs_per_row)
+        value_column = label_column + 1
+        table.set_cell_text(table_row, label_column, row.label)
+        table.set_cell_text(table_row, value_column, row.sample_value)
         # set_cell_text()의 기본 preserve_format=True는 셀이 이미 갖고 있던
         # (skeleton 또는 이전) charPr을 그대로 둔다 — label/value typography가
         # Institution Design Contract에서 온 값이 아니라 라이브러리/이전
         # 상태에서 새어 들어올 수 있다. 텍스트를 쓴 뒤 각 셀 문단의
         # charPrIDRef를 명시적으로 덮어써 이 leak을 차단한다.
-        for paragraph in table.cell(row_index, 0).paragraphs:
+        for paragraph in table.cell(table_row, label_column).paragraphs:
             paragraph.char_pr_id_ref = label_char_pr
-        for paragraph in table.cell(row_index, 1).paragraphs:
+        for paragraph in table.cell(table_row, value_column).paragraphs:
             paragraph.char_pr_id_ref = value_char_pr
 
 
+def _materialize_simple_table(
+    doc: Any, section: Any, entry: ResolvedSimpleTableSection, skeleton_pool: list[Any]
+) -> None:
+    style = entry.style
+    border_fill_id = doc.styles.ensure_border_fill(
+        border_width=f"{style.border_width_mm} mm",
+        border_color=style.border_color,
+    )
+    table = _add_table(
+        doc,
+        section,
+        skeleton_pool,
+        rows=len(entry.rows) + (1 if entry.header else 0),
+        cols=len(entry.column_widths),
+        border_fill_id_ref=border_fill_id,
+        width=round(style.width_mm * _HWPUNIT_PER_MM),
+    )
+    table.set_column_widths(list(entry.column_widths))
+    if style.cell_margin_mm is not None:
+        _set_table_cell_margin(table, style.cell_margin_mm)
+    label_char_pr = _ensure_run_for_style(doc, style.label_style)
+    value_char_pr = _ensure_run_for_style(doc, style.value_style)
+    if entry.header:
+        for column_index, cell_text in enumerate(entry.header):
+            table.set_cell_text(0, column_index, cell_text)
+            for paragraph in table.cell(0, column_index).paragraphs:
+                paragraph.char_pr_id_ref = label_char_pr
+    row_offset = 1 if entry.header else 0
+    for row_index, row in enumerate(entry.rows, start=row_offset):
+        for column_index, cell_text in enumerate(row):
+            table.set_cell_text(row_index, column_index, cell_text)
+            for paragraph in table.cell(row_index, column_index).paragraphs:
+                paragraph.char_pr_id_ref = value_char_pr
+
+
+#: masthead.slots가 선언할 수 있는 role별 실제 값 lookup — role 이름을 어느
+#: ``ResolvedMasthead`` 필드/materialize 동작에 연결할지는 여기 한 곳에서만
+#: 결정한다. 새 role을 추가하려면(이번 task 범위 밖) 이 dict와
+#: ``_MASTHEAD_SLOT_MATERIALIZERS``만 늘리면 된다 — `_materialize_masthead()`
+#: 자체는 role 이름으로 분기하지 않는다.
 def _masthead_slot_width_by_role(masthead: ResolvedMasthead) -> Mapping[str, float]:
     return {
         "logo_left": masthead.logo_left_slot_width_mm,
@@ -855,7 +1112,7 @@ def _masthead_slot_width_by_role(masthead: ResolvedMasthead) -> Mapping[str, flo
 def _materialize_masthead(
     doc: Any, section: Any, masthead: ResolvedMasthead, skeleton_pool: list[Any]
 ) -> None:
-    """[로고 왼쪽 | 문서명 | 로고 오른쪽] 3열 1행 표를 문서 최상단에 만든다.
+    """[로고 | 문서명 | 로고] 1행 표를 문서 최상단에 만든다.
 
     일반 본문 문단이 아니라 표로 만드는 이유는 두 가지다: (1) 로고를 실제
     `hp:pic` 이미지 개체로 넣으려면 어차피 문단 안에 넣어야 하는데, 표 셀에
@@ -863,6 +1120,17 @@ def _materialize_masthead(
     나열하면 칸 구분이 안 생긴다). (2) 표는 테두리를 그릴 수 있어
     "명확한 사각형/박스형 영역"이라는 이번 task의 요구를 만족한다 — 이는
     baseline이 관찰한 masthead 조판(표로 짜인 상단 영역)과도 일치한다.
+
+    어느 칸이 어느 role인지는 이 함수가 정하지 않는다 — ``masthead.slots``
+    (Institution Design Contract의 ``masthead.slots``에서 resolve()가 그대로
+    옮긴 값)의 왼쪽→오른쪽 순서를 그대로 읽어 column index를 계산한다
+    (masthead-structural-ownership task). 열 개수도 ``len(masthead.slots)``
+    에서 오지 리터럴이 아니다 — 다만 이 authoring 버전은 정확히 3개 role
+    (logo_left/title/logo_right 각 1개)만 지원하므로 실질적으로 항상 3이다.
+    행 개수도 마찬가지로 ``masthead.row_count``에서 온다 — 이 값은 이
+    함수가 아니라 resolve()가 검증하며(현재 이 authoring 버전이 지원하는
+    유일한 값은 1), 여기서는 리터럴 ``1``을 쓰지 않고 그 필드를 그대로
+    전달한다.
     """
     border_fill_id = doc.styles.ensure_border_fill(
         border_width=f"{masthead.border_width_mm} mm",
@@ -880,17 +1148,19 @@ def _materialize_masthead(
     )
     _set_table_cell_margin(table, masthead.cell_margin_mm)
 
-    # 세 칸 폭은 institution이 명시적으로 정한 값을 그대로 쓴다 — 로고
+    # 각 칸 폭은 institution이 명시적으로 정한 값을 그대로 쓴다 — 로고
     # 크기나 cell_margin에서 유도하거나 width/3으로 균등 분배하지 않는다
     # (v3 visual QA: 왼쪽 로고 칸이 지나치게 크고 가운데 문서명 칸이
     # 과도하게 비어 보였다). 세 값의 합이 masthead.width_mm과 같음은
-    # resolve()가 이미 검증했다.
+    # resolve()가 이미 검증했다. 폭의 나열 순서는 ``masthead.slots``의
+    # 순서를 그대로 따른다 — 어느 role이 몇 번째 칸인지 여기서 다시
+    # 가정하지 않는다.
     slot_width_by_role = _masthead_slot_width_by_role(masthead)
     table.set_column_widths([slot_width_by_role[role] for role in masthead.slots])
 
     # 로고/문서명 모두 각자의 칸 안에서 가운데 정렬한다. 문서명의 폰트/크기/
     # 색/굵기는 institution의 title_style_role에서 오지만(_ensure_run_for_style),
-    # "칸 안에서 가운데"라는 배치 자체는 3칸 masthead 구조 자체가 요구하는
+    # "칸 안에서 가운데"라는 배치 자체는 masthead 구조 자체가 요구하는
     # 값이라 title_style.align이 아니라 여기서 고정한다 — role의 align은
     # (masthead 밖에서 title role이 쓰일 일이 생기더라도) 그 문맥의 값으로
     # 남겨 둔다.
@@ -1029,7 +1299,9 @@ def build_separation_rules(
             "the generated document structure no longer matches what was authored"
         )
     table_sections = [
-        entry for entry in resolved.sections if isinstance(entry, ResolvedInfoTableSection)
+        entry
+        for entry in resolved.sections
+        if isinstance(entry, (ResolvedInfoTableSection, ResolvedSimpleTableSection))
     ]
     expected_table_count = len(table_sections) + (1 if resolved.masthead is not None else 0)
     if len(table_indexes) != expected_table_count:
@@ -1046,7 +1318,9 @@ def build_separation_rules(
             "text_node_index": context.location.text_node_index,
         }
         if placement is not None and role is TextRole.CONTENT:
-            rule["field_id"] = placement["field_id"]
+            rule["field_id"] = _runtime_field_id(placement)
+            if "prototype_level" in placement:
+                rule["prototype_level"] = int(placement["prototype_level"])
         rules.append(rule)
 
     remaining_table_indexes = list(table_indexes)
@@ -1066,27 +1340,32 @@ def build_separation_rules(
             }
         )
     for table_index, table_section in zip(remaining_table_indexes, table_sections, strict=True):
-        for row_index, row in enumerate(table_section.rows):
-            rules.append(
-                {
-                    "role": TextRole.FIXED_LABEL.value,
-                    "section": section,
-                    "table": table_index,
-                    "row": row_index,
-                    "col": 0,
-                }
-            )
-            content_rule: dict[str, Any] = {
-                "role": TextRole.CONTENT.value,
-                "section": section,
-                "table": table_index,
-                "row": row_index,
-                "col": 1,
-            }
-            if resolved.semantic_placements:
-                content_rule["field_id"] = row.field_id
-            rules.append(content_rule)
+        if isinstance(table_section, ResolvedInfoTableSection):
+            for row_index, row in enumerate(table_section.rows):
+                table_row = row_index // table_section.pairs_per_row
+                label_column = 2 * (row_index % table_section.pairs_per_row)
+                rules.append({"role": TextRole.FIXED_LABEL.value, "section": section, "table": table_index, "row": table_row, "col": label_column})
+                content_rule: dict[str, Any] = {"role": TextRole.CONTENT.value, "section": section, "table": table_index, "row": table_row, "col": label_column + 1}
+                if resolved.semantic_placements:
+                    content_rule["field_id"] = row.field_id
+                rules.append(content_rule)
+        else:
+            for column_index in range(len(table_section.column_widths)):
+                if table_section.header:
+                    rules.append({"role": TextRole.FIXED_LABEL.value, "section": section, "table": table_index, "row": 0, "col": column_index})
+            row_offset = 1 if table_section.header else 0
+            for row_index, row in enumerate(table_section.rows, start=row_offset):
+                for column_index, _ in enumerate(row):
+                    rules.append({"role": TextRole.CONTENT.value, "section": section, "table": table_index, "row": row_index, "col": column_index, "field_id": f"{table_section.collection_field_id}[{row_index - row_offset}].{table_section.item_fields[column_index]}"})
     return {"rules": rules}
+
+
+def _runtime_field_id(placement: Mapping[str, str]) -> str:
+    item_field = placement.get("item_field")
+    materialized_index = placement.get("materialized_index")
+    if item_field is None or materialized_index is None:
+        return placement["field_id"]
+    return f"{placement['field_id']}[{materialized_index}].{item_field}"
 
 
 def _expected_non_table_entries(
@@ -1116,7 +1395,7 @@ def _expected_non_table_entries(
             by_section_index.setdefault(int(placement["section_index"]), []).append(placement)
         pairs: list[tuple[TextRole, Mapping[str, str] | None]] = []
         for section_index, entry in enumerate(resolved.sections):
-            if isinstance(entry, ResolvedInfoTableSection):
+            if isinstance(entry, (ResolvedInfoTableSection, ResolvedSimpleTableSection)):
                 continue
             if resolved.masthead is not None and isinstance(entry, ResolvedTitleSection):
                 continue
@@ -1130,8 +1409,11 @@ def _expected_non_table_entries(
                 continue
             pairs.append((TextRole.FIXED_TEXT, None))
         elif isinstance(entry, ResolvedBodySection):
-            pairs.append((TextRole.FIXED_TEXT, None))
-            pairs.append((TextRole.CONTENT, None))
+            if entry.hierarchy_items:
+                pairs.extend((TextRole.CONTENT, None) for _ in entry.hierarchy_items)
+            else:
+                pairs.append((TextRole.FIXED_TEXT, None))
+                pairs.append((TextRole.CONTENT, None))
     return tuple(pairs)
 
 

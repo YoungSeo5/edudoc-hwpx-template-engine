@@ -77,7 +77,7 @@ from .hwpx_template_input import (
 JsonScalar: TypeAlias = str | int | float | bool | None
 JsonValue: TypeAlias = JsonScalar | list["JsonValue"] | dict[str, "JsonValue"]
 
-_PLACEHOLDER_RE = re.compile(r"\{\{([A-Za-z0-9_]+)\}\}")
+_PLACEHOLDER_RE = re.compile(r"\{\{([A-Za-z0-9_.\[\]]+)\}\}")
 _SECTION_TEMPLATE_RE = re.compile(r"^section(\d+)\.template\.xml$", re.IGNORECASE)
 _REPEAT_OBJECT_RE = re.compile(
     r"<hp:(?:tbl|ctrl|pic|ole|equation|container)\b"
@@ -228,6 +228,15 @@ def _fill_resolved_template_sections(
             plan.repeat_blocks,
         )
         filled.update(repeat_filled)
+        filled_xml, collection_filled, collection_ranges = render_collection_bindings(
+            filled_xml,
+            plan.collection_values,
+            plan.collection_bindings,
+            section,
+        )
+        filled.update(collection_filled)
+        if collection_ranges:
+            rewritten.setdefault(section, []).extend(collection_ranges)
         if repeat_ranges:
             rewritten[section] = repeat_ranges
         filled_xml = _fill_xml(
@@ -843,8 +852,24 @@ def _validate_rendered_layout(
     """Check the rendered document still gives every placeholder its recorded layout."""
     with zipfile.ZipFile(output_path) as package:
         try:
+            collection_paths = {
+                binding["canonical_path"]
+                for binding in placeholder_map.get("collections", [])
+                if isinstance(binding, dict)
+                and isinstance(binding.get("canonical_path"), str)
+            }
+            layout_map = dict(placeholder_map)
+            layout_map["fields"] = [
+                entry
+                for entry in placeholder_map.get("fields", [])
+                if not (
+                    isinstance(entry, dict)
+                    and isinstance(entry.get("field_id"), str)
+                    and any(entry["field_id"].startswith(f"{path}[") for path in collection_paths)
+                )
+            ]
             verify_recorded_layout(
-                placeholder_map,
+                layout_map,
                 lambda section: package.read(f"Contents/{section}"),
                 package.read("Contents/header.xml"),
                 where="the rendered document",
@@ -1012,10 +1037,17 @@ def _table_cell_fills(
     *,
     on_missing: str,
 ) -> tuple[list[HwpxTableCellFill], set[str], set[str]]:
+    collection_paths = {
+        binding["canonical_path"]
+        for binding in placeholder_map.get("collections", [])
+        if isinstance(binding, dict)
+        and isinstance(binding.get("canonical_path"), str)
+    }
     entries = [
         entry
         for entry in placeholder_map.get("fields", [])
         if entry.get("replacement_mode") == "table_cell"
+        and not any(entry.get("field_id", "").startswith(f"{path}[") for path in collection_paths)
     ]
     filled = {entry["field_id"] for entry in entries if content.get(entry["field_id"]) is not None}
     missing = {entry["field_id"] for entry in entries} - filled
@@ -1266,6 +1298,230 @@ def render_repeat_block(
         filled.update(block_filled)
 
     return xml, filled, sorted(rewritten)
+
+
+def render_collection_bindings(
+    xml: str,
+    values: Mapping[str, list[JsonValue]],
+    bindings: tuple[Mapping[str, JsonValue], ...],
+    section: str,
+) -> tuple[str, set[str], list[tuple[int, int, int]]]:
+    filled: set[str] = set()
+    rewritten: list[tuple[int, int, int]] = []
+    for binding in bindings:
+        canonical_path = binding.get("canonical_path")
+        if not isinstance(canonical_path, str) or canonical_path not in values:
+            continue
+        kind = binding.get("kind")
+        if kind == "table_row":
+            xml, range_ = _materialize_collection_table_rows(xml, binding, values[canonical_path], canonical_path)
+        elif kind == "hierarchy_paragraph":
+            xml, range_ = _materialize_collection_paragraphs(xml, binding, values[canonical_path], canonical_path)
+        else:
+            raise HwpxTemplateRenderError(
+                f"collection {canonical_path!r} has unsupported kind {kind!r} in {section}"
+            )
+        filled.add(canonical_path)
+        rewritten.append(range_)
+    return xml, filled, rewritten
+
+
+def _materialize_collection_table_rows(
+    xml: str,
+    binding: Mapping[str, JsonValue],
+    values: list[JsonValue],
+    canonical_path: str,
+) -> tuple[str, tuple[int, int, int]]:
+    location = binding.get("prototype_location")
+    prototype_rows = binding.get("prototype_rows")
+    paragraph_indices = binding.get("prototype_paragraph_indices")
+    if not isinstance(location, dict) or not isinstance(prototype_rows, list) or not isinstance(paragraph_indices, list):
+        raise HwpxTemplateRenderError(f"collection {canonical_path!r} has no table prototype")
+    table_index = location.get("table")
+    row_index = location.get("row")
+    if not isinstance(table_index, int) or not isinstance(row_index, int):
+        raise HwpxTemplateRenderError(f"collection {canonical_path!r} has an invalid table prototype")
+    tables = list(re.finditer(r"<hp:tbl\b.*?</hp:tbl>", xml, re.DOTALL))
+    if table_index >= len(tables):
+        raise HwpxTemplateRenderError(f"collection {canonical_path!r} table prototype was not found")
+    table = tables[table_index]
+    table_xml = table.group(0)
+    rows = list(re.finditer(r"<hp:tr\b.*?</hp:tr>", table_xml, re.DOTALL))
+    if row_index >= len(rows):
+        raise HwpxTemplateRenderError(f"collection {canonical_path!r} row prototype was not found")
+    source_rows = sorted({row for row in prototype_rows if isinstance(row, int)})
+    if not source_rows or any(row >= len(rows) for row in source_rows):
+        raise HwpxTemplateRenderError(f"collection {canonical_path!r} has invalid prototype rows")
+    prototype = rows[row_index].group(0)
+    rendered = "".join(
+        _fill_collection_table_row(prototype, binding, canonical_path, item)
+        for item in values
+    )
+    first = min(source_rows)
+    replacements = [(rows[row].start(), rows[row].end(), "") for row in source_rows]
+    replacements.append((rows[first].start(), rows[first].start(), rendered))
+    for start, end, replacement in sorted(replacements, reverse=True):
+        table_xml = table_xml[:start] + replacement + table_xml[end:]
+    table_xml = _renumber_table_rows(table_xml)
+    source_indices = sorted(index for index in paragraph_indices if isinstance(index, int))
+    if not source_indices:
+        raise HwpxTemplateRenderError(f"collection {canonical_path!r} has no table paragraph prototype")
+    return (
+        xml[:table.start()] + table_xml + xml[table.end():],
+        (source_indices[0], len(source_indices), len(values) * _paragraph_count_in(prototype)),
+    )
+
+
+def _renumber_table_rows(table_xml: str) -> str:
+    """Keep ``hp:tbl@rowCnt`` and each row's ``hp:cellAddr@rowAddr`` in sync
+    with the table's actual ``hp:tr`` children.
+
+    Every real reference HWPX table in this repository has ``rowCnt`` equal to
+    its physical row count and each row's cells sharing one ``rowAddr`` that
+    matches the row's 0-indexed position, with no gaps or repeats. Collection
+    row materialization inserts/removes ``hp:tr`` elements but previously left
+    both stale at the prototype's original values. A package built that way
+    still passes strict/zip validation but Hancom rejects it as a damaged
+    file, because row cardinality no longer matches what its own row index
+    metadata declares.
+    """
+    rows = list(re.finditer(r"<hp:tr\b.*?</hp:tr>", table_xml, re.DOTALL))
+    pieces: list[str] = []
+    cursor = 0
+    for row_index, match in enumerate(rows):
+        pieces.append(table_xml[cursor:match.start()])
+        pieces.append(
+            re.sub(
+                r'(<hp:cellAddr\b[^>]*\browAddr=")\d+("[^>]*/>)',
+                rf"\g<1>{row_index}\g<2>",
+                match.group(0),
+            )
+        )
+        cursor = match.end()
+    pieces.append(table_xml[cursor:])
+    renumbered = "".join(pieces)
+    return re.sub(r'rowCnt="\d+"', f'rowCnt="{len(rows)}"', renumbered, count=1)
+
+
+def _materialize_collection_paragraphs(
+    xml: str,
+    binding: Mapping[str, JsonValue],
+    values: list[JsonValue],
+    canonical_path: str,
+) -> tuple[str, tuple[int, int, int]]:
+    raw_prototypes = binding.get("prototype_paragraphs")
+    if not isinstance(raw_prototypes, list) or not raw_prototypes:
+        raise HwpxTemplateRenderError(f"collection {canonical_path!r} has no paragraph prototypes")
+    prototypes: dict[int, tuple[str, str, tuple[int, int]]] = {}
+    source_spans: list[tuple[int, int]] = []
+    source_indices: list[int] = []
+    for raw in raw_prototypes:
+        if not isinstance(raw, dict):
+            raise HwpxTemplateRenderError(f"collection {canonical_path!r} has an invalid paragraph prototype")
+        runtime_path = raw.get("runtime_path")
+        level = raw.get("prototype_level")
+        prefix = raw.get("fixed_prefix")
+        paragraph_index = raw.get("paragraph_index")
+        if not isinstance(runtime_path, str) or not isinstance(level, int) or not isinstance(prefix, str) or not isinstance(paragraph_index, int):
+            raise HwpxTemplateRenderError(f"collection {canonical_path!r} has an incomplete paragraph prototype")
+        matches = list(
+            re.finditer(
+                rf"<hp:p\b[^>]*>(?:(?!<hp:p\b).)*?\{{\{{{re.escape(runtime_path)}\}}\}}(?:(?!<hp:p\b).)*?</hp:p>",
+                xml,
+                re.DOTALL,
+            )
+        )
+        if len(matches) != 1:
+            raise HwpxTemplateRenderError(f"collection {canonical_path!r} paragraph prototype was not found")
+        prototypes[level] = (matches[0].group(0), prefix, matches[0].span())
+        source_spans.append(matches[0].span())
+        source_indices.append(paragraph_index)
+    rendered: list[str] = []
+    for item in values:
+        if not isinstance(item, dict):
+            raise HwpxTemplateRenderError(f"collection {canonical_path!r} items must be objects")
+        level = item.get("level")
+        text = item.get("text")
+        if not isinstance(level, int) or isinstance(level, bool) or not isinstance(text, str):
+            raise HwpxTemplateRenderError(f"collection {canonical_path!r} items require integer level and text")
+        prototype = prototypes.get(level)
+        if prototype is None:
+            raise HwpxTemplateRenderError(f"collection {canonical_path!r} has no prototype for level {level}")
+        paragraph, prefix, _ = prototype
+        rendered.append(_fill_collection_item(paragraph, canonical_path, {"text": prefix + text}))
+    start = min(span[0] for span in source_spans)
+    end = max(span[1] for span in source_spans)
+    return (
+        xml[:start] + "".join(rendered) + xml[end:],
+        (min(source_indices), len(source_indices), len(rendered)),
+    )
+
+
+def _fill_collection_item(template: str, canonical_path: str, item: JsonValue) -> str:
+    if not isinstance(item, dict):
+        raise HwpxTemplateRenderError(f"collection {canonical_path!r} items must be objects")
+
+    def replace(match: re.Match) -> str:
+        field_id = match.group(1)
+        prefix = f"{canonical_path}["
+        if not field_id.startswith(prefix) or "." not in field_id:
+            return match.group(0)
+        subfield = field_id.rsplit(".", 1)[1]
+        value = item.get(subfield)
+        if value is None:
+            raise HwpxTemplateRenderError(
+                f"collection {canonical_path!r} item is missing subfield {subfield!r}"
+            )
+        if isinstance(value, (dict, list)):
+            raise HwpxTemplateRenderError(
+                f"collection {canonical_path!r} item subfield {subfield!r} must be scalar"
+            )
+        return escape(str(value))
+
+    return _PLACEHOLDER_RE.sub(replace, template)
+
+
+def _fill_collection_table_row(
+    row: str,
+    binding: Mapping[str, JsonValue],
+    canonical_path: str,
+    item: JsonValue,
+) -> str:
+    if not isinstance(item, dict):
+        raise HwpxTemplateRenderError(f"collection {canonical_path!r} items must be objects")
+    cells = binding.get("prototype_cells")
+    if not isinstance(cells, list):
+        raise HwpxTemplateRenderError(f"collection {canonical_path!r} has no table cell projection")
+    replacements: list[tuple[int, int, str]] = []
+    for projection in cells:
+        if not isinstance(projection, dict):
+            raise HwpxTemplateRenderError(f"collection {canonical_path!r} has an invalid table cell projection")
+        col = projection.get("col")
+        subfield = projection.get("subfield")
+        if not isinstance(col, int) or not isinstance(subfield, str):
+            raise HwpxTemplateRenderError(f"collection {canonical_path!r} has an incomplete table cell projection")
+        value = item.get(subfield)
+        if value is None or isinstance(value, (dict, list)):
+            raise HwpxTemplateRenderError(f"collection {canonical_path!r} item is missing scalar subfield {subfield!r}")
+        matches = list(
+            re.finditer(
+                rf"<hp:tc\b(?:(?!</hp:tc>).)*?<hp:cellAddr\b[^>]*\bcolAddr=\"{col}\"[^>]*/>(?:(?!</hp:tc>).)*?</hp:tc>",
+                row,
+                re.DOTALL,
+            )
+        )
+        if len(matches) != 1:
+            raise HwpxTemplateRenderError(f"collection {canonical_path!r} cell {col} was not found")
+        cell = matches[0]
+        text = re.search(r"<hp:t\b[^>]*>(?P<body>.*?)</hp:t>", cell.group(0), re.DOTALL)
+        if text is None:
+            raise HwpxTemplateRenderError(f"collection {canonical_path!r} cell {col} has no text node")
+        replacements.append(
+            (cell.start() + text.start("body"), cell.start() + text.end("body"), escape(str(value)))
+        )
+    for start, end, value in sorted(replacements, reverse=True):
+        row = row[:start] + value + row[end:]
+    return row
 
 
 def _paragraph_count_in(xml: str) -> int:

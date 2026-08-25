@@ -43,6 +43,7 @@ from .hwpx_semantic_placeholder_projection import (
 from .hwpx_semantic_resolutions import apply_resolutions, load_resolutions, unresolved_skeleton
 from .hwpx_separation_rules import (
     SeparationRules,
+    TextLocation,
     TextRole,
     load_separation_rules,
 )
@@ -171,6 +172,21 @@ def separate_hwpx_template_content(
         )
         for item in applied:
             item[LAYOUT_CONTEXT_KEY] = layout.context_for(item)
+            template_layout_prefix = item.pop("_template_layout_prefix", "")
+            prototype_level = rules.prototype_level_for(
+                TextLocation(
+                    section=item["section"],
+                    text_node_index=item["text_node_index"],
+                    table=item.get("table"),
+                    row=item.get("row"),
+                    col=item.get("col"),
+                    paragraph_index=item.get("paragraph_index"),
+                )
+            )
+            if prototype_level is not None:
+                item["prototype_level"] = prototype_level
+                if item["sample_value"].startswith(template_layout_prefix):
+                    item["sample_value"] = item["sample_value"][len(template_layout_prefix):]
             fields[item["field_id"]] = item["sample_value"]
             placeholder_entries.append(item)
         # 스타일 정의는 여러 placeholder가 공유하므로 문서 단위로 한 번만 기록한다.
@@ -207,6 +223,7 @@ def separate_hwpx_template_content(
                 "section_paragraph_counts": section_paragraph_counts,
                 STYLE_MARGIN_KEY: style_margins,
                 "fields": placeholder_entries,
+                "collections": _collection_metadata(placeholder_entries),
             },
             ensure_ascii=False,
             indent=2,
@@ -290,6 +307,7 @@ def _section_decisions(
             is_table_text
             and not cell_is_multi_node
             and not is_marker_content_node
+            and not is_semantic_fixed
             and None not in table_key
             and table_key not in seen_table_cells
         ):
@@ -431,6 +449,7 @@ def _apply_decisions(xml: str, decisions: list[dict[str, Any]]) -> tuple[str, li
                     "paragraph_index": decision["location"].get("paragraph_index"),
                     "semantic_role": decision["semantic_role"],
                     "semantic_decision_id": decision["semantic_decision_id"],
+                    "_template_layout_prefix": leading,
                 }
             )
         else:
@@ -476,10 +495,12 @@ def _table_cell_is_content(
 
 
 def _table_cell_sample_value(contexts: list[Any]) -> str:
+    content_contexts = [context for context in contexts if context.normalized_text]
+    if len(content_contexts) == 1:
+        return content_contexts[0].original_text
     return " ".join(
-        context.normalized_text
-        for context in contexts
-        if context.normalized_text
+        context.original_text
+        for context in content_contexts
     )
 
 
@@ -499,6 +520,88 @@ def _replacement_mode(entries: list[dict[str, Any]]) -> str:
     if modes == {"table_cell"}:
         return "table_cell_only"
     return "mixed"
+
+
+_COLLECTION_FIELD_RE = re.compile(
+    r"^(?P<canonical>[A-Za-z0-9_]+)\[(?P<index>\d+)\]\.(?P<subfield>[A-Za-z0-9_]+)$"
+)
+
+
+def _collection_metadata(entries: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    grouped: dict[str, list[tuple[int, str, dict[str, Any]]]] = defaultdict(list)
+    for entry in entries:
+        field_id = entry.get("field_id")
+        if not isinstance(field_id, str):
+            continue
+        match = _COLLECTION_FIELD_RE.fullmatch(field_id)
+        if match is None:
+            continue
+        grouped[match["canonical"]].append(
+            (int(match["index"]), match["subfield"], entry)
+        )
+
+    collections: list[dict[str, Any]] = []
+    for canonical, projections in sorted(grouped.items()):
+        table_entries = [entry for _, _, entry in projections if entry.get("replacement_mode") == "table_cell"]
+        if table_entries:
+            prototype_rows = sorted({int(entry["row"]) for entry in table_entries})
+            prototype = min(table_entries, key=lambda entry: int(entry["row"]))
+            collections.append(
+                {
+                    "canonical_path": canonical,
+                    "kind": "table_row",
+                    "subfields": sorted({subfield for _, subfield, _ in projections}),
+                    "prototype_location": {
+                        "section": prototype["section"],
+                        "table": prototype["table"],
+                        "row": prototype["row"],
+                    },
+                    "prototype_rows": prototype_rows,
+                    "prototype_paragraph_indices": sorted(
+                        {
+                            int(entry["paragraph_index"])
+                            for entry in table_entries
+                        }
+                    ),
+                    "prototype_cells": [
+                        {
+                            "item_index": index,
+                            "subfield": subfield,
+                            "col": entry["col"],
+                        }
+                        for index, subfield, entry in projections
+                        if int(entry["row"]) == int(prototype["row"])
+                    ],
+                }
+            )
+            continue
+        prototype_paragraphs = []
+        for index, subfield, entry in sorted(projections):
+            sample_value = entry["sample_value"]
+            marker = re.match(r"^\W+", sample_value)
+            prototype_paragraphs.append(
+                {
+                    "runtime_path": entry["field_id"],
+                    "subfield": subfield,
+                    "item_index": index,
+                    "prototype_level": entry.get("prototype_level"),
+                    "paragraph_index": entry["paragraph_index"],
+                    "fixed_prefix": marker.group(0) if marker else "",
+                    "location": {
+                        "section": entry["section"],
+                        "paragraph_index": entry["paragraph_index"],
+                    },
+                }
+            )
+        collections.append(
+            {
+                "canonical_path": canonical,
+                "kind": "hierarchy_paragraph",
+                "subfields": sorted({subfield for _, subfield, _ in projections}),
+                "prototype_paragraphs": prototype_paragraphs,
+            }
+        )
+    return collections
 
 
 def _validate_placeholder_paragraph_contract(template_dir: Path) -> None:
