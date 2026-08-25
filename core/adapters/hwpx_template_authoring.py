@@ -69,10 +69,6 @@ _MARGIN_KEYS = ("left", "right", "top", "bottom", "header", "footer")
 _REQUIRED_MARGIN_KEYS = ("left", "right", "top", "bottom")
 _SECTION_TYPES = ("title", "info_table", "body_section")
 
-# masthead는 [로고 왼쪽 | 문서명 | 로고 오른쪽] 3열 표로 고정한다(2026-08-18
-# 사용자 결정, 문서 유형과 무관한 구조 상수 — institution design이 바꿀 수
-# 있는 건 각 칸의 실제 값/크기이지, 몇 번째 칸이 문서명인지가 아니다).
-_MASTHEAD_TITLE_COLUMN = 1
 _HP_NS = "http://www.hancom.co.kr/hwpml/2011/paragraph"
 
 
@@ -543,6 +539,8 @@ class ResolvedMasthead:
     logo_left_slot_width_mm: float
     title_slot_width_mm: float
     logo_right_slot_width_mm: float
+    slots: tuple[str, ...]
+    row_count: int
 
 
 @dataclass(frozen=True, slots=True)
@@ -846,6 +844,14 @@ def _materialize_info_table(
             paragraph.char_pr_id_ref = value_char_pr
 
 
+def _masthead_slot_width_by_role(masthead: ResolvedMasthead) -> Mapping[str, float]:
+    return {
+        "logo_left": masthead.logo_left_slot_width_mm,
+        "title": masthead.title_slot_width_mm,
+        "logo_right": masthead.logo_right_slot_width_mm,
+    }
+
+
 def _materialize_masthead(
     doc: Any, section: Any, masthead: ResolvedMasthead, skeleton_pool: list[Any]
 ) -> None:
@@ -866,8 +872,8 @@ def _materialize_masthead(
         doc,
         section,
         skeleton_pool,
-        rows=1,
-        cols=3,
+        rows=masthead.row_count,
+        cols=len(masthead.slots),
         border_fill_id_ref=border_fill_id,
         width=round(masthead.width_mm * _HWPUNIT_PER_MM),
         height=round(masthead.height_mm * _HWPUNIT_PER_MM),
@@ -879,13 +885,8 @@ def _materialize_masthead(
     # (v3 visual QA: 왼쪽 로고 칸이 지나치게 크고 가운데 문서명 칸이
     # 과도하게 비어 보였다). 세 값의 합이 masthead.width_mm과 같음은
     # resolve()가 이미 검증했다.
-    table.set_column_widths(
-        [
-            masthead.logo_left_slot_width_mm,
-            masthead.title_slot_width_mm,
-            masthead.logo_right_slot_width_mm,
-        ]
-    )
+    slot_width_by_role = _masthead_slot_width_by_role(masthead)
+    table.set_column_widths([slot_width_by_role[role] for role in masthead.slots])
 
     # 로고/문서명 모두 각자의 칸 안에서 가운데 정렬한다. 문서명의 폰트/크기/
     # 색/굵기는 institution의 title_style_role에서 오지만(_ensure_run_for_style),
@@ -895,11 +896,13 @@ def _materialize_masthead(
     # 남겨 둔다.
     center_para_pr_id = _ensure_paragraph_alignment(doc, "CENTER")
 
-    if masthead.logo_left is not None:
-        _materialize_masthead_logo(doc, table, 0, masthead.logo_left, center_para_pr_id)
-    _materialize_masthead_title(doc, table, masthead, center_para_pr_id)
-    if masthead.logo_right is not None:
-        _materialize_masthead_logo(doc, table, 2, masthead.logo_right, center_para_pr_id)
+    for column_index, role in enumerate(masthead.slots):
+        if role == "title":
+            _materialize_masthead_title(doc, table, masthead, column_index, center_para_pr_id)
+        elif role == "logo_left" and masthead.logo_left is not None:
+            _materialize_masthead_logo(doc, table, column_index, masthead.logo_left, center_para_pr_id)
+        elif role == "logo_right" and masthead.logo_right is not None:
+            _materialize_masthead_logo(doc, table, column_index, masthead.logo_right, center_para_pr_id)
 
     if masthead.spacing_after_pt is not None:
         doc.styles.apply_paragraph_format(
@@ -954,10 +957,10 @@ def _materialize_masthead_logo(
 
 
 def _materialize_masthead_title(
-    doc: Any, table: Any, masthead: ResolvedMasthead, para_pr_id: str
+    doc: Any, table: Any, masthead: ResolvedMasthead, col_index: int, para_pr_id: str
 ) -> None:
     char_pr = _ensure_run_for_style(doc, masthead.title_style)
-    cell = table.cell(0, _MASTHEAD_TITLE_COLUMN)
+    cell = table.cell(0, col_index)
     cell.set_text(masthead.title)
     for paragraph in cell.paragraphs:
         paragraph.char_pr_id_ref = char_pr
@@ -1059,7 +1062,7 @@ def build_separation_rules(
                 "section": section,
                 "table": masthead_table_index,
                 "row": 0,
-                "col": _MASTHEAD_TITLE_COLUMN,
+                "col": resolved.masthead.slots.index("title"),
             }
         )
     for table_index, table_section in zip(remaining_table_indexes, table_sections, strict=True):

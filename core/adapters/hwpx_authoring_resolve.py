@@ -96,7 +96,11 @@ _MASTHEAD_REQUIRED_WHEN_ACTIVE = (
     "logo_left_slot_width_mm",
     "title_slot_width_mm",
     "logo_right_slot_width_mm",
+    "slots",
+    "row_count",
 )
+_MASTHEAD_SUPPORTED_ROW_COUNT = 1
+_MASTHEAD_SLOT_ROLES = frozenset({"logo_left", "title", "logo_right"})
 #: 세 칸 폭 합이 masthead.width_mm과 벌어질 수 있는 최대 오차(mm) — 부동소수
 #: 반올림만 허용하고, "대략 맞음"은 통과시키지 않는다.
 _MASTHEAD_SLOT_WIDTH_TOLERANCE_MM = 0.01
@@ -348,6 +352,43 @@ def _parse_institution_masthead(value: Any) -> dict[str, Any]:
             f"({parsed['width_mm']})"
         )
 
+    # masthead-structural-ownership task: which column holds which role is an
+    # institution decision, not an authoring assumption. `slots` is the
+    # left-to-right column order; it must name exactly the closed set of
+    # roles this authoring version supports (one logo_left, one title, one
+    # logo_right — no fewer, no more, no unknown role), but their order is
+    # free. resolve()/generate_source_hwpx() read this order instead of
+    # assuming which column is which.
+    slots = value["slots"]
+    if (
+        not isinstance(slots, list)
+        or len(slots) != len(_MASTHEAD_SLOT_ROLES)
+        or set(slots) != _MASTHEAD_SLOT_ROLES
+    ):
+        raise HwpxAuthoringResolveError(
+            "masthead.slots must be an array declaring exactly one each of "
+            f"{sorted(_MASTHEAD_SLOT_ROLES)} (in this institution's chosen "
+            f"left-to-right order), got {slots!r}"
+        )
+    parsed["slots"] = tuple(slots)
+
+    # masthead-structural-ownership task: row count is likewise an explicit
+    # contract declaration, not a Python literal — but this authoring
+    # version only knows how to materialize a single-row masthead, so the
+    # only value it can accept is 1. A declared value other than that fails
+    # fast rather than being silently coerced or ignored.
+    row_count = value["row_count"]
+    if (
+        not isinstance(row_count, int)
+        or isinstance(row_count, bool)
+        or row_count != _MASTHEAD_SUPPORTED_ROW_COUNT
+    ):
+        raise HwpxAuthoringResolveError(
+            f"masthead.row_count must be {_MASTHEAD_SUPPORTED_ROW_COUNT} — this authoring "
+            f"version only materializes a single-row masthead, got {row_count!r}"
+        )
+    parsed["row_count"] = row_count
+
     if "spacing_after_pt" in value and value["spacing_after_pt"] is not None:
         parsed["spacing_after_pt"] = _parse_nonnegative_number(
             "masthead.spacing_after_pt", value["spacing_after_pt"]
@@ -470,6 +511,8 @@ def _resolve_masthead(
         logo_left_slot_width_mm=design_masthead["logo_left_slot_width_mm"],
         title_slot_width_mm=design_masthead["title_slot_width_mm"],
         logo_right_slot_width_mm=design_masthead["logo_right_slot_width_mm"],
+        slots=design_masthead["slots"],
+        row_count=design_masthead["row_count"],
     )
 
 

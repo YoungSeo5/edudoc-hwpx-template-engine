@@ -313,8 +313,35 @@ def _write_masthead_design(
     title_slot_width_mm: float,
     logo_right_slot_width_mm: float,
     width_mm: float = 170.0,
+    slots: list[str] | None = None,
+    omit_slots: bool = False,
+    row_count: int | None = None,
+    omit_row_count: bool = False,
 ) -> Path:
     path = tmp_path / "masthead_design.json"
+    masthead: dict[str, Any] = {
+        "default": "required",
+        "document_override_allowed": True,
+        "width_mm": width_mm,
+        "height_mm": 22.0,
+        "border_width_mm": 0.4,
+        "border_color": "#123456",
+        "cell_margin_mm": {"left": 3.0, "right": 3.0, "top": 2.0, "bottom": 2.0},
+        "title_style_role": "title",
+        "logo_left_asset_id": "test_logo_left",
+        "logo_left_width_mm": 10.0,
+        "logo_left_height_mm": 10.0,
+        "logo_right_asset_id": "test_logo_right",
+        "logo_right_width_mm": 10.0,
+        "logo_right_height_mm": 10.0,
+        "logo_left_slot_width_mm": logo_left_slot_width_mm,
+        "title_slot_width_mm": title_slot_width_mm,
+        "logo_right_slot_width_mm": logo_right_slot_width_mm,
+    }
+    if not omit_slots:
+        masthead["slots"] = slots if slots is not None else ["logo_left", "title", "logo_right"]
+    if not omit_row_count:
+        masthead["row_count"] = row_count if row_count is not None else 1
     path.write_text(
         json.dumps(
             {
@@ -323,25 +350,7 @@ def _write_masthead_design(
                 "design_id": "test-design-v1",
                 "evidence_reference": "docs/hwpx-layout-baseline.md",
                 "defaults": {"page": {}, "styles": {"title": dict(_BASE_TEXT_ROLE)}, "table": {}},
-                "masthead": {
-                    "default": "required",
-                    "document_override_allowed": True,
-                    "width_mm": width_mm,
-                    "height_mm": 22.0,
-                    "border_width_mm": 0.4,
-                    "border_color": "#123456",
-                    "cell_margin_mm": {"left": 3.0, "right": 3.0, "top": 2.0, "bottom": 2.0},
-                    "title_style_role": "title",
-                    "logo_left_asset_id": "test_logo_left",
-                    "logo_left_width_mm": 10.0,
-                    "logo_left_height_mm": 10.0,
-                    "logo_right_asset_id": "test_logo_right",
-                    "logo_right_width_mm": 10.0,
-                    "logo_right_height_mm": 10.0,
-                    "logo_left_slot_width_mm": logo_left_slot_width_mm,
-                    "title_slot_width_mm": title_slot_width_mm,
-                    "logo_right_slot_width_mm": logo_right_slot_width_mm,
-                },
+                "masthead": masthead,
                 "assets": [
                     {"asset_id": "test_logo_left", "path": str(_MASTHEAD_LOGO_ASSET_DIR / "test-logo-left.png")},
                     {"asset_id": "test_logo_right", "path": str(_MASTHEAD_LOGO_ASSET_DIR / "test-logo-right.png")},
@@ -378,3 +387,111 @@ def test_resolve_rejects_masthead_slot_widths_not_summing_to_width(tmp_path: Pat
 
     with pytest.raises(HwpxAuthoringResolveError, match="logo_left_slot_width_mm"):
         resolve(design_path, spec)
+
+
+# ---------------------------------------------------------------------------
+# H. masthead structural ownership (masthead-structural-ownership task):
+#    which column holds which role is an Institution Design Contract
+#    declaration (``masthead.slots``), not an authoring assumption. resolve()
+#    must fail fast on a missing/invalid declaration — never silently
+#    recreate the old fixed 3-column structure — and must carry a
+#    reordered declaration through unchanged.
+# ---------------------------------------------------------------------------
+
+
+def test_resolve_rejects_masthead_missing_slots_declaration(tmp_path: Path) -> None:
+    design_path = _write_masthead_design(
+        tmp_path,
+        logo_left_slot_width_mm=35.0,
+        title_slot_width_mm=100.0,
+        logo_right_slot_width_mm=35.0,
+        omit_slots=True,
+    )
+    spec = _title_spec("title")
+
+    with pytest.raises(HwpxAuthoringResolveError, match="slots"):
+        resolve(design_path, spec)
+
+
+@pytest.mark.parametrize(
+    "slots",
+    [
+        ["logo_left", "title"],  # 두 개뿐 — logo_right 누락
+        ["logo_left", "logo_left", "title"],  # logo_right 대신 logo_left 중복
+        ["logo_left", "title", "banner"],  # 알 수 없는 role
+    ],
+)
+def test_resolve_rejects_masthead_slots_not_exactly_the_three_known_roles(
+    tmp_path: Path, slots: list[str]
+) -> None:
+    design_path = _write_masthead_design(
+        tmp_path,
+        logo_left_slot_width_mm=35.0,
+        title_slot_width_mm=100.0,
+        logo_right_slot_width_mm=35.0,
+        slots=slots,
+    )
+    spec = _title_spec("title")
+
+    with pytest.raises(HwpxAuthoringResolveError, match="slots"):
+        resolve(design_path, spec)
+
+
+def test_resolve_carries_reordered_masthead_slots_through_unchanged(tmp_path: Path) -> None:
+    # 순서 자체가 institution의 선언이라는 증거 — resolve()가 순서를
+    # "logo/title/logo"로 재해석하거나 검증 없이 통과시키는 게 아니라, 선언된
+    # 순서를 그대로 보존해야 한다.
+    design_path = _write_masthead_design(
+        tmp_path,
+        logo_left_slot_width_mm=35.0,
+        title_slot_width_mm=100.0,
+        logo_right_slot_width_mm=35.0,
+        slots=["title", "logo_left", "logo_right"],
+    )
+    spec = _title_spec("title")
+
+    resolved = resolve(design_path, spec)
+
+    assert resolved.masthead is not None
+    assert resolved.masthead.slots == ("title", "logo_left", "logo_right")
+
+
+def test_resolve_rejects_masthead_missing_row_count_declaration(tmp_path: Path) -> None:
+    design_path = _write_masthead_design(
+        tmp_path,
+        logo_left_slot_width_mm=35.0,
+        title_slot_width_mm=100.0,
+        logo_right_slot_width_mm=35.0,
+        omit_row_count=True,
+    )
+    spec = _title_spec("title")
+
+    with pytest.raises(HwpxAuthoringResolveError, match="row_count"):
+        resolve(design_path, spec)
+
+
+@pytest.mark.parametrize("row_count", [0, 2, True])
+def test_resolve_rejects_masthead_row_count_other_than_one(tmp_path: Path, row_count: object) -> None:
+    design_path = _write_masthead_design(
+        tmp_path,
+        logo_left_slot_width_mm=35.0,
+        title_slot_width_mm=100.0,
+        logo_right_slot_width_mm=35.0,
+        row_count=row_count,
+    )
+    spec = _title_spec("title")
+
+    with pytest.raises(HwpxAuthoringResolveError, match="row_count"):
+        resolve(design_path, spec)
+
+
+def test_resolve_carries_masthead_row_count_through(tmp_path: Path) -> None:
+    design_path = _write_masthead_design(
+        tmp_path, logo_left_slot_width_mm=35.0, title_slot_width_mm=100.0, logo_right_slot_width_mm=35.0
+    )
+    spec = _title_spec("title")
+
+    resolved = resolve(design_path, spec)
+
+    assert resolved.masthead is not None
+    assert resolved.masthead.row_count == 1
