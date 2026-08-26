@@ -46,6 +46,25 @@ another contract or from the existing implementation.
 - `FIXED` / `CONTENT`, the canonical path, cardinality, and requiredness are
   executed as declared and are not reinterpreted.
 
+### Authoring visual ownership and precedence
+
+- Institution Design owns the base typography and paragraph geometry of a
+  style role.
+- A Family Recipe owns required component structure and component-to-style-role
+  mapping.
+- A TemplateSpec owns document structure, field bindings, document-specific
+  markers, and hierarchy-depth-specific geometry.
+- The resolver performs lookup, permitted merges, and validation.
+- Runtime and the HWPX skeleton materialize resolved values; they do not own
+  design decisions.
+
+Component and role selection uses the TemplateSpec component when it states a
+value; otherwise it uses the Family Recipe component default. Actual style
+values use a hierarchy-specific TemplateSpec replacement first, then a
+permitted TemplateSpec style override, then the Institution Design role. An
+HWPX base `paraPr` is only a fallback when these contracts omit a value; it is
+not normal ownership and indicates a contract omission.
+
 ## Schemas
 
 - [TemplateRequest v1](template-request.schema.json)

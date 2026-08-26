@@ -308,8 +308,8 @@ def test_one_page_recipe_materializes_native_hierarchy_and_structured_status_tab
     top_level_margin = next(hierarchy_formats["□ 다음 주 계획"].iter(f"{head_namespace}margin"))
     child_margin = next(hierarchy_formats["◦ 통합 테스트"].iter(f"{head_namespace}margin"))
     assert next(top_level_margin.iter(f"{core_namespace}left")).get("value") == "1417"
-    assert next(top_level_margin.iter(f"{core_namespace}intent")).get("value") == "-4480"
-    assert next(child_margin.iter(f"{core_namespace}intent")).get("value") == "-5980"
+    assert next(top_level_margin.iter(f"{core_namespace}intent")).get("value") == "-2240"
+    assert next(child_margin.iter(f"{core_namespace}intent")).get("value") == "-2990"
     assert all(para_pr.find(f"{head_namespace}tabPr") is None for para_pr in hierarchy_formats.values())
 
     tables = section_root.findall(f".//{paragraph_namespace}tbl")
