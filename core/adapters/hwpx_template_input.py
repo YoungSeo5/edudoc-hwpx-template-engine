@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import json
 from collections.abc import Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from pathlib import Path
 
@@ -63,6 +63,8 @@ class ResolvedRenderPlan:
     repeat_values: dict[str, list[JsonValue]]
     repeat_blocks: dict[str, RepeatBlock]
     fit_constraints: dict[str, FitConstraint]
+    collection_values: dict[str, list[JsonValue]] = field(default_factory=dict)
+    collection_bindings: tuple[Mapping[str, JsonValue], ...] = ()
 
 
 @dataclass(frozen=True, slots=True)
@@ -127,7 +129,13 @@ def resolve_hwpx_template_input(
         field_ids=field_ids,
         template_id=template_id,
     )
+    collection_bindings = _collection_bindings(placeholder_map)
     if alias_map is None:
+        collection_values = {
+            binding["canonical_path"]: value
+            for binding in collection_bindings
+            if isinstance(value := content.get(binding["canonical_path"]), list)
+        }
         return ResolvedTemplateContent(
             template_id=template_id,
             placeholder_map=placeholder_map,
@@ -136,6 +144,8 @@ def resolve_hwpx_template_input(
                 repeat_values={},
                 repeat_blocks={},
                 fit_constraints={},
+                collection_values=collection_values,
+                collection_bindings=collection_bindings,
             ),
             unknown_keys=(),
             metadata=None,
@@ -177,6 +187,12 @@ def resolve_hwpx_template_input(
                 block.anchor: block for block in alias_map.blocks.values()
             },
             fit_constraints=alias_map.fit_constraints,
+            collection_values={
+                binding["canonical_path"]: value
+                for binding in collection_bindings
+                if isinstance(value := content.get(binding["canonical_path"]), list)
+            },
+            collection_bindings=collection_bindings,
         ),
         unknown_keys=tuple(unknown_keys),
         metadata=metadata,
@@ -249,3 +265,20 @@ def _validate_required_semantic_content(
         raise HwpxTemplateInputError(
             f"required canonical semantic field(s) are missing or unresolved: {missing}"
         )
+
+
+def _collection_bindings(
+    placeholder_map: Mapping[str, JsonValue],
+) -> tuple[Mapping[str, JsonValue], ...]:
+    raw = placeholder_map.get("collections", [])
+    if not isinstance(raw, list):
+        raise HwpxTemplateInputError("placeholder_map collections must be an array")
+    bindings: list[Mapping[str, JsonValue]] = []
+    for binding in raw:
+        if not isinstance(binding, dict):
+            raise HwpxTemplateInputError("placeholder_map collection must be an object")
+        canonical_path = binding.get("canonical_path")
+        if not isinstance(canonical_path, str) or not canonical_path:
+            raise HwpxTemplateInputError("placeholder_map collection requires canonical_path")
+        bindings.append(binding)
+    return tuple(bindings)
