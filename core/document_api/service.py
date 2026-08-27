@@ -125,6 +125,9 @@ def render_approved_document(
         return result
     validation = validate_native_page_count(result.output, expected_pages)
     if not validation.passed:
+        # A document that fails a required post-write contract must not be
+        # left at its intended output path under a failed call.
+        result.output.unlink(missing_ok=True)
         raise HwpxTemplateRenderError(
             "native page validation failed: "
             f"expected_pages={validation.expected_pages}, "

@@ -147,6 +147,48 @@ def test_template_without_alias_map_renders_canonical_content(
     assert output.is_file()
 
 
+# final approved render boundary: leftover_placeholders가 하나라도 있으면
+# validate=True(기본값)에서 실패해야 한다. 지금까지는 leftover를 보고만 하고
+# ok로 넘어갔다 — 미해결 {{placeholder}}가 그대로 최종 문서에 남을 수 있었다.
+def test_final_generation_fails_when_content_leaves_a_placeholder_unresolved(
+    tmp_path: Path,
+) -> None:
+    template_dir = _candidate_template_dir(tmp_path)
+
+    output = tmp_path / "incomplete.hwpx"
+    with pytest.raises(HwpxTemplateRenderError, match="unresolved placeholders"):
+        orchestrate_hwpx_render(
+            template_dir,
+            {},
+            output,
+            execution_context=EXECUTION_CONTEXT,
+        )
+    # A failed final render must not leave a placeholder-bearing document at
+    # the caller's intended output path.
+    assert not output.exists()
+
+
+def test_final_generation_allows_leftover_placeholder_when_validate_is_false(
+    tmp_path: Path,
+) -> None:
+    """validate=False는 기존에도 strict package validation을 건너뛰는 명시적
+    탈출구였다. leftover placeholder 검사도 같은 탈출구를 공유해, 의도적으로
+    미완성 결과를 들여다보는 기존 사용처(예: 결측 optional 필드 조사)를 깨지
+    않는다."""
+    template_dir = _candidate_template_dir(tmp_path)
+
+    output = tmp_path / "incomplete-unvalidated.hwpx"
+    result = orchestrate_hwpx_render(
+        template_dir,
+        {},
+        output,
+        execution_context=EXECUTION_CONTEXT,
+        validate=False,
+    )
+
+    assert result.leftover_placeholders == ["demo_field"]
+
+
 def test_final_generation_requires_an_execution_context() -> None:
     with pytest.raises(HwpxTemplateInputError, match="requires execution_context"):
         prepare_hwpx_template_input(FSS_DIR, _content())

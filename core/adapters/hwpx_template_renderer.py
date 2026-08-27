@@ -670,7 +670,10 @@ def orchestrate_hwpx_render(
 
     ``validate`` (default True) runs strict HWPX package validation on the output
     and raises if it does not pass — a file that only opens in Hancom is not enough.
-    Set ``validate=False`` only to intentionally inspect an unvalidated result.
+    When ``validate`` is True this also raises if any ``{{placeholder}}`` is still
+    unresolved in the output: a final approved document must not ship with a
+    visible placeholder. Set ``validate=False`` only to intentionally inspect an
+    unvalidated, possibly-incomplete result.
     """
     try:
         prepared = prepare_hwpx_template_input(
@@ -680,7 +683,7 @@ def orchestrate_hwpx_render(
         )
     except HwpxTemplateInputError as exc:
         raise HwpxTemplateRenderError(str(exc)) from exc
-    return render_prepared_hwpx_template(
+    result = render_prepared_hwpx_template(
         template_dir,
         prepared,
         output_path,
@@ -688,6 +691,16 @@ def orchestrate_hwpx_render(
         on_missing=on_missing,
         validate=validate,
     )
+    if validate and result.leftover_placeholders:
+        # A final render must never leave a placeholder-bearing document on
+        # disk under its intended output path — remove the incomplete file
+        # before surfacing the failure, not just refuse to return it.
+        result.output.unlink(missing_ok=True)
+        raise HwpxTemplateRenderError(
+            "final approved render left unresolved placeholders: "
+            f"{result.leftover_placeholders}"
+        )
+    return result
 
 
 def render_prepared_hwpx_template(

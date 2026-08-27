@@ -114,11 +114,15 @@ def test_document_render_rejects_native_page_mismatch(
         lambda *_: _native_validation(passed=False, observed_pages=2, reason=None),
     )
 
+    output = tmp_path / "mismatch.hwpx"
     with pytest.raises(HwpxTemplateRenderError, match="expected_pages=1.*observed_pages=2"):
         document_service.render_approved_document(
-            "금융감독원", "금감원 원페이지", _CONTENT, tmp_path / "mismatch.hwpx", _CONTEXT,
+            "금융감독원", "금감원 원페이지", _CONTENT, output, _CONTEXT,
             content_template_id="fss_one_page",
         )
+    # A failed native-page-count contract must not leave a document behind at
+    # the caller's intended output path.
+    assert not output.exists()
 
 
 def test_document_render_rejects_unavailable_native_validation(
