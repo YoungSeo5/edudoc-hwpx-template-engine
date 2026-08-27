@@ -1,4 +1,4 @@
-"""Institution-template extraction, quality control, and approved-template loading."""
+"""Institution-template extraction and approved-template loading."""
 
 from .models import (
     ExtractedStyleProfile,
@@ -8,7 +8,6 @@ from .models import (
     TemplateIdentity,
 )
 from .hwpx_package_extractor import HwpxExtractionResult, extract_hwpx_template
-from .pipeline import build_candidate, run_template_pipeline
 from .registry import TemplateRegistry
 
 __all__ = [
@@ -19,7 +18,5 @@ __all__ = [
     "TemplateDiagnostic",
     "TemplateIdentity",
     "TemplateRegistry",
-    "build_candidate",
     "extract_hwpx_template",
-    "run_template_pipeline",
 ]
