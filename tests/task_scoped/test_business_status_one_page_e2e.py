@@ -55,7 +55,7 @@ def test_business_status_candidate_renders_sparse_normal_dense_without_state_lea
     tmp_path: Path,
 ) -> None:
     candidate_id = f"business_status_one_page_{uuid.uuid4().hex}"
-    candidate = ROOT / "sandbox" / "template-candidates" / candidate_id
+    candidate = tmp_path / "template-candidates" / candidate_id
 
     exit_code = author_hwpx_template.main(
         [
@@ -65,6 +65,7 @@ def test_business_status_candidate_renders_sparse_normal_dense_without_state_lea
             "--template-spec", str(_SPEC),
             "--institution", "edudoc",
             "--document-type", "사업 추진현황 1페이지 보고서",
+            "--output-dir", str(candidate),
             "--candidate-id", candidate_id,
             "--template-id", "edudoc-business-status-one-page-v1",
         ]

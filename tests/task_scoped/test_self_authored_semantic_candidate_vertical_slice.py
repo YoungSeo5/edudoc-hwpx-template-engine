@@ -20,6 +20,7 @@ def test_authoring_cli_persists_a_semantic_candidate_bundle(
     capsys,
 ) -> None:
     candidate_id = f"cand_vertical_slice_{uuid.uuid4().hex}"
+    candidate = tmp_path / "template-candidates" / candidate_id
     exit_code = author_hwpx_template.main(
         [
             "--template-request", str(REQUEST),
@@ -28,12 +29,12 @@ def test_authoring_cli_persists_a_semantic_candidate_bundle(
             "--template-spec", str(SPEC),
             "--institution", "edudoc",
             "--document-type", "주간업무보고서",
+            "--output-dir", str(candidate),
             "--candidate-id", candidate_id,
             "--template-id", f"tpl_{uuid.uuid4().hex}",
         ]
     )
     summary = json.loads(capsys.readouterr().out)
-    candidate = ROOT / "sandbox/template-candidates" / candidate_id
 
     assert exit_code == 0, summary
     assert summary["ok"] is True

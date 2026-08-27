@@ -25,8 +25,9 @@ _SPEC = ROOT / "tests/fixtures/template-spec/weekly_report_one_page.template_spe
 
 
 @pytest.fixture(scope="module")
-def self_authored_candidate() -> Path:
+def self_authored_candidate(tmp_path_factory: pytest.TempPathFactory) -> Path:
     candidate_id = f"collection_runtime_{uuid.uuid4().hex}"
+    candidate = tmp_path_factory.mktemp("template-candidates") / candidate_id
     exit_code = author_hwpx_template.main(
         [
             "--template-request", str(_REQUEST),
@@ -35,11 +36,11 @@ def self_authored_candidate() -> Path:
             "--template-spec", str(_SPEC),
             "--institution", "edudoc",
             "--document-type", "주간업무보고서",
+            "--output-dir", str(candidate),
             "--candidate-id", candidate_id,
             "--template-id", f"tpl_{uuid.uuid4().hex}",
         ]
     )
-    candidate = ROOT / "sandbox/template-candidates" / candidate_id
     assert exit_code in (0, 1)
     assert (candidate / "placeholder_map.json").is_file()
     collections = json.loads(

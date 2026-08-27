@@ -35,9 +35,11 @@ def test_one_page_section_heading_resolves_declared_line_spacing() -> None:
     assert heading.heading_style.line_spacing_percent == 160.0
 
 
-def test_hierarchy_projection_uses_children_after_the_section_heading() -> None:
+def test_hierarchy_projection_uses_children_after_the_section_heading(
+    tmp_path: Path,
+) -> None:
     candidate_id = f"hierarchy_projection_{uuid.uuid4().hex}"
-    candidate = ROOT / "sandbox" / "template-candidates" / candidate_id
+    candidate = tmp_path / "template-candidates" / candidate_id
     exit_code = author_hwpx_template.main(
         [
             "--template-request", str(FIXTURES / "template_request.json"),
@@ -46,6 +48,7 @@ def test_hierarchy_projection_uses_children_after_the_section_heading() -> None:
             "--institution-design", str(DESIGN),
             "--institution", "edudoc",
             "--document-type", "사업 추진현황 1페이지 보고서",
+            "--output-dir", str(candidate),
             "--candidate-id", candidate_id,
             "--template-id", f"tpl_{uuid.uuid4().hex}",
         ]
