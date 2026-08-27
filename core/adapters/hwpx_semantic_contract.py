@@ -57,6 +57,10 @@ def load_semantic_contract(path: Path | str) -> SemanticContract:
     if raw.get("semantic_contract_version") != "v1":
         raise SemanticContractError("semantic contract requires semantic_contract_version='v1'")
     contract_id = _required_string(raw, "contract_id")
+    # Schema-required identity the runtime authoring path also enforces
+    # (scripts/templates/author_hwpx_template.py cross-checks it against
+    # TemplateRequest.request_id) but this loader never checked on its own.
+    _required_string(raw, "template_request_id")
     institution = _required_string(raw, "institution")
     document_type = _required_string(raw, "document_type")
     entries = raw.get("elements")

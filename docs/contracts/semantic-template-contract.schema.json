@@ -5,7 +5,7 @@
   "description": "Agent-authored semantic source of truth for a template. It has no physical HWPX coordinates.",
   "type": "object",
   "additionalProperties": false,
-  "required": ["semantic_contract_version", "template_request_id", "institution", "document_type", "elements"],
+  "required": ["semantic_contract_version", "contract_id", "template_request_id", "institution", "document_type", "elements"],
   "properties": {
     "semantic_contract_version": { "const": "v1" },
     "contract_id": { "type": "string", "minLength": 1 },
@@ -36,7 +36,13 @@
         "display_label": { "type": "string", "minLength": 1 },
         "required": { "type": "boolean" },
         "cardinality": { "enum": ["one", "many"] },
-        "content_type": { "enum": ["text", "date", "choice"] }
+        "content_type": { "enum": ["text", "date", "choice", "object"] },
+        "item_fields": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "type": "string", "pattern": "^[a-z][a-z0-9_]*$" },
+          "uniqueItems": true
+        }
       }
     },
     "fixedElement": {

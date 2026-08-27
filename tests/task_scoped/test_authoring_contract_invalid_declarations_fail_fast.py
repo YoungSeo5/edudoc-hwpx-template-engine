@@ -71,6 +71,7 @@ def _semantic_contract(cardinality: object) -> dict[str, object]:
     return {
         "semantic_contract_version": "v1",
         "contract_id": "invalid_cardinality_test",
+        "template_request_id": "invalid_cardinality_test_request",
         "institution": "demo",
         "document_type": "demo",
         "elements": [

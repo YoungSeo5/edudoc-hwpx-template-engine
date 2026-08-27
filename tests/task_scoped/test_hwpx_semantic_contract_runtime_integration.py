@@ -198,3 +198,42 @@ def test_required_collection_still_rejected_when_actually_missing_with_alias_map
 
     with pytest.raises(HwpxTemplateInputError, match="major_tasks"):
         prepare_hwpx_template_input(candidate, content)
+
+
+def test_load_semantic_contract_requires_contract_id(tmp_path: Path) -> None:
+    raw = json.loads(SEMANTIC.read_text(encoding="utf-8"))
+    del raw["contract_id"]
+    broken = tmp_path / "semantic.json"
+    broken.write_text(json.dumps(raw, ensure_ascii=False), encoding="utf-8")
+
+    with pytest.raises(SemanticContractError, match="contract_id"):
+        load_semantic_contract(broken)
+
+
+def test_load_semantic_contract_requires_template_request_id(tmp_path: Path) -> None:
+    # docs/contracts/semantic-template-contract.schema.json has always
+    # required template_request_id; the loader itself never checked it.
+    raw = json.loads(SEMANTIC.read_text(encoding="utf-8"))
+    del raw["template_request_id"]
+    broken = tmp_path / "semantic.json"
+    broken.write_text(json.dumps(raw, ensure_ascii=False), encoding="utf-8")
+
+    with pytest.raises(SemanticContractError, match="template_request_id"):
+        load_semantic_contract(broken)
+
+
+def test_semantic_contract_schema_requires_every_identity_field_the_loader_requires() -> None:
+    """The published schema and load_semantic_contract() must agree on which
+    top-level identity fields are mandatory — neither should accept a
+    contract the other would reject."""
+    schema_path = ROOT / "docs/contracts/semantic-template-contract.schema.json"
+    schema = json.loads(schema_path.read_text(encoding="utf-8"))
+    loader_required_identity = {
+        "semantic_contract_version",
+        "contract_id",
+        "template_request_id",
+        "institution",
+        "document_type",
+    }
+
+    assert loader_required_identity <= set(schema["required"])
