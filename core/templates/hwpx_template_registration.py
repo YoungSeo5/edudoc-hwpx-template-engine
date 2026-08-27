@@ -2,14 +2,23 @@
 from __future__ import annotations
 
 import json
-from hashlib import sha256
 import shutil
+import tempfile
 import zipfile
 from dataclasses import dataclass
+from hashlib import sha256
 from pathlib import Path
 
 from .registry import TemplateRegistry
 from .serialization import load_candidate
+from .hwpx_template_storage import (
+    TemplateRegistrationError,
+    audit_destination,
+    copy_registration_artifacts,
+    reject_template_id_conflict,
+    require_within_candidate_root,
+    write_approved_status,
+)
 from ..adapters.hwpx_semantic_contract import (
     bind_semantic_contract,
     load_semantic_contract,
@@ -18,11 +27,16 @@ from ..adapters.hwpx_semantic_contract import (
 from ..adapters.hwpx_template_authoring import load_template_spec
 from ..adapters.hwpx_template_input import prepare_hwpx_template_input
 from ..adapters.hwpx_template_input import HwpxTemplateInputError
+from ..adapters.hwpx_template_renderer import (
+    HwpxTemplateRenderError,
+    render_candidate_roundtrip,
+)
 
 # 이 모듈의 경계:
 # hwpx_content_separator가 남긴 candidate 폴더
 # → 필수 파일·패키지·status 검증 → template_id·대상 경로 충돌 확인
-# → 정식 경로로 복사 → status를 approved로 변경 → registry.find로 등록 확인
+# → runtime은 정식 경로, evidence는 audit 경로로 복사 → status를 approved로 변경
+# → registry.find로 등록 확인
 # → 확인된 뒤에야 후보 원본을 지운다.
 # 승인 판단은 호출자(사람)의 approve 인자이며, 이 모듈이 스스로 승인하지 않는다.
 
@@ -49,10 +63,6 @@ EVIDENCE_FILES = frozenset({"qa.report.json", "human_review.json"})
 _UNKNOWN = "확인 필요"
 
 
-class TemplateRegistrationError(ValueError):
-    pass
-
-
 @dataclass(frozen=True, slots=True)
 class TemplateRegistrationResult:
     institution: str
@@ -66,8 +76,19 @@ def register_hwpx_template_candidate(
     *,
     registry_root: Path | str,
     approve: bool = False,
+    candidate_root: Path | str | None = None,
 ) -> TemplateRegistrationResult:
-    """Move an approved candidate to its official path and confirm registration."""
+    """Move an approved candidate to its official path and confirm registration.
+
+    *candidate_root*, when given, is the one boundary this function enforces
+    before anything else runs: *candidate_dir* must resolve to a path inside
+    it, or registration is rejected before any file is even opened. Omitting
+    *candidate_root* (the default) keeps this function's prior behavior
+    unchanged for callers that manage their own candidate location (e.g.
+    existing tests using an isolated temp directory) — the check only
+    activates for a caller that opts in, such as the CLI script, which always
+    passes the real candidate root.
+    """
     # 흐름 1: 승인은 사람의 명시적 의사여야 한다. 코드가 스스로 승격하지 않는다.
     if not approve:
         raise TemplateRegistrationError(
@@ -75,6 +96,8 @@ def register_hwpx_template_candidate(
         )
 
     source = Path(candidate_dir)
+    if candidate_root is not None:
+        require_within_candidate_root(source, Path(candidate_root))
     identity = _validate_candidate(source)
     institution = identity["institution"]
     document_type = identity["document_type"]
@@ -83,6 +106,7 @@ def register_hwpx_template_candidate(
     # 흐름 2: 대상 경로와 template_id 충돌을 복사 전에 모두 확인한다.
     registry = TemplateRegistry(registry_root)
     destination = registry.template_path(institution, document_type).parent
+    audit = audit_destination(Path(registry_root), template_id)
     if destination.exists():
         if destination.resolve() == source.resolve():
             raise TemplateRegistrationError(
@@ -91,19 +115,22 @@ def register_hwpx_template_candidate(
         raise TemplateRegistrationError(
             f"destination path already exists: {destination}"
         )
-    _reject_template_id_conflict(Path(registry_root), template_id)
+    reject_template_id_conflict(Path(registry_root), template_id)
+    if audit.exists():
+        raise TemplateRegistrationError(f"audit path already exists: {audit}")
 
     # 흐름 3: 복사본으로 먼저 등록을 성립시킨다. 확인 전까지 후보 원본은 손대지
     # 않으므로, 어느 단계에서 실패해도 후보는 그대로 남는다.
     destination.parent.mkdir(parents=True, exist_ok=True)
-    shutil.copytree(source, destination)
-    _write_approved_status(destination / "template.json")
+    copy_registration_artifacts(source, destination, audit)
+    write_approved_status(destination / "template.json")
 
     # 흐름 4: 등록 성공은 registry가 실제로 찾을 수 있는지로만 확인한다.
     # 확인에 실패하면 복사본을 지워 정식 경로에 미확인 결과를 남기지 않는다.
     registered = registry.find(institution, document_type)
     if registered is None or registered.identity.template_id != template_id:
         shutil.rmtree(destination, ignore_errors=True)
+        shutil.rmtree(audit, ignore_errors=True)
         raise TemplateRegistrationError(
             "registration could not be confirmed by TemplateRegistry; "
             f"the candidate was kept at {source}"
@@ -117,8 +144,6 @@ def register_hwpx_template_candidate(
         template_id=template_id,
         destination=destination,
     )
-
-
 def _validate_candidate(source: Path) -> dict[str, str]:
     if not source.is_dir():
         raise TemplateRegistrationError(f"candidate directory not found: {source}")
@@ -165,6 +190,8 @@ def _validate_candidate(source: Path) -> dict[str, str]:
 
     if (source / "semantic_contract.json").is_file():
         _validate_contract_complete_candidate(source)
+    else:
+        _validate_legacy_candidate_renders(source)
 
     values = {}
     for name in ("institution", "document_type", "template_id"):
@@ -175,6 +202,44 @@ def _validate_candidate(source: Path) -> dict[str, str]:
             )
         values[name] = value.strip()
     return values
+
+
+def _validate_legacy_candidate_renders(source: Path) -> None:
+    """source-extracted/legacy 후보(semantic_contract.json 없음)도 승인 전에
+    자신의 content.sample.json으로 실제 round-trip 렌더가 되는지 확인한다.
+
+    self-authored/contract-complete 후보는 `_validate_contract_complete_candidate`가
+    이미 렌더 가능성을 확인하지만, semantic_contract.json이 없는 legacy 경로는
+    지금까지 등록 시점에 아무 렌더 가능성도 확인하지 않았다. 이 함수는 legacy
+    경로에 Semantic Contract를 요구하지 않고, 후보가 이미 갖고 있는
+    content.sample.json만으로 확인한다.
+
+    field가 없는 최소 후보(단위 테스트 스텁 등)는 확인할 렌더 대상이 없으므로
+    건너뛴다.
+    """
+    try:
+        sample = json.loads((source / "content.sample.json").read_text(encoding="utf-8"))
+    except (OSError, ValueError) as exc:
+        raise TemplateRegistrationError(
+            f"content.sample.json cannot be read: {exc}"
+        ) from exc
+    fields = sample.get("fields") if isinstance(sample, dict) else None
+    if not isinstance(fields, dict) or not fields:
+        return
+    with tempfile.TemporaryDirectory() as tmp:
+        try:
+            result = render_candidate_roundtrip(
+                source, fields, Path(tmp) / "registration_renderability_check.hwpx"
+            )
+        except (HwpxTemplateRenderError, OSError, ValueError) as exc:
+            raise TemplateRegistrationError(
+                f"legacy candidate cannot render its own sample content: {exc}"
+            ) from exc
+    if result.leftover_placeholders:
+        raise TemplateRegistrationError(
+            "legacy candidate would leave unresolved placeholders when rendered "
+            f"from its own sample content: {result.leftover_placeholders}"
+        )
 
 
 def _validate_contract_complete_candidate(source: Path) -> None:
@@ -232,33 +297,3 @@ def candidate_artifact_digest(candidate_dir: Path | str) -> str:
         digest.update(b"\0")
         digest.update(sha256(artifact.read_bytes()).digest())
     return digest.hexdigest()
-
-
-def _reject_template_id_conflict(registry_root: Path, template_id: str) -> None:
-    for path in sorted(registry_root.glob("*/*/template.json")):
-        # 읽지 못한 파일이 있으면 충돌 없음을 증명할 수 없으므로,
-        # 어느 파일이 문제인지 밝히고 중단한다.
-        try:
-            data = json.loads(path.read_text(encoding="utf-8"))
-            status = data.get("status")
-            declared = (data.get("identity") or {}).get("template_id")
-        except (OSError, ValueError, AttributeError) as exc:
-            raise TemplateRegistrationError(
-                f"cannot read an existing template while checking for a "
-                f"template_id conflict: {path} ({exc})"
-            ) from exc
-        if status != "approved":
-            continue
-        if declared == template_id:
-            raise TemplateRegistrationError(
-                f"template_id {template_id!r} is already registered at {path.parent}"
-            )
-
-
-def _write_approved_status(template_json: Path) -> None:
-    data = json.loads(template_json.read_text(encoding="utf-8"))
-    data["status"] = "approved"
-    template_json.write_text(
-        json.dumps(data, ensure_ascii=False, indent=2) + "\n",
-        encoding="utf-8",
-    )

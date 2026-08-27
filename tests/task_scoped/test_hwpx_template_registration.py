@@ -81,7 +81,10 @@ def test_registration_creates_official_path_and_registry_finds_it(tmp_path: Path
     assert result.template_id == "ulsan_legislative_notice"
     assert not candidate.exists()
     assert (destination / "source.hwpx").is_file()
-    assert (destination / "raw" / "section0.xml").is_file()
+    assert not (destination / "raw").exists()
+    assert (
+        tmp_path / "audit" / "ulsan_legislative_notice" / "raw" / "section0.xml"
+    ).is_file()
 
     data = json.loads((destination / "template.json").read_text(encoding="utf-8"))
     assert data["status"] == "approved"
@@ -282,6 +285,8 @@ def test_cli_reports_an_unreadable_candidate_as_json(
             str(candidate),
             "--registry-root",
             str(tmp_path / "institutions"),
+            "--candidate-root",
+            str(tmp_path),
             "--approve",
         ]
     )

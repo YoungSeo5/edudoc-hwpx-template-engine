@@ -105,7 +105,11 @@ def test_contract_complete_approval_requires_evidence_and_prepares_without_alias
         register_hwpx_template_candidate(candidate, registry_root=registry, approve=True)
     _review(candidate)
     result = register_hwpx_template_candidate(candidate, registry_root=registry, approve=True)
-    content = json.loads((result.destination / "content.sample.json").read_text(encoding="utf-8"))
+    content = json.loads(
+        (tmp_path / "audit" / result.template_id / "content.sample.json").read_text(
+            encoding="utf-8"
+        )
+    )
     prepared = prepare_hwpx_template_input(result.destination, content["fields"])
     assert prepared.package_metadata is None
 

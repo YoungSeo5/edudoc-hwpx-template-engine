@@ -31,13 +31,14 @@ Observed reference-layout evidence remains in
 
 | Artifact | Authoritative contents | Created by | Consumer | Canonical location |
 |---|---|---|---|---|
-| `TemplateRequest` | stated purpose, requested items, fixed text, reference scope, constraints | person/request layer | agent | candidate then approved package |
-| Semantic Template Contract | canonical fields, roles, requiredness, cardinality, types | agent | planner, mapping, validator | candidate then approved package |
+| `TemplateRequest` | stated purpose, requested items, fixed text, reference scope, constraints | person/request layer | agent | candidate then audit |
+| Semantic Template Contract | canonical fields, roles, requiredness, cardinality, types | agent | planner, mapping, validator | candidate then approved runtime when present |
 | layout baseline | observed evidence | reference analysis | person/agent | `docs/hwpx-layout-baseline.md` |
 | Institution Design Contract | institution defaults, masthead policy, asset refs | institution/product policy | authoring planner | `templates/institutions/<institution>/_design/design.json` |
-| executable `TemplateSpec` | concrete ordered document layout and provenance references | authoring planner | HWPX author | candidate then approved package |
+| executable `TemplateSpec` | concrete ordered document layout and provenance references | authoring planner | HWPX author, page-count validator | candidate then approved runtime when present |
 | candidate | review HWPX, contracts, QA evidence | code | QA/human | `sandbox/template-candidates/<candidate_id>/` |
-| approved package | final-renderable template and copied contracts | approval process | registry/renderer | `templates/institutions/<institution>/<document_type>/` |
+| audit | QA, human review, authoring provenance, and non-runtime candidate evidence | approval process | audit/review | `templates/audit/<template_id>/` |
+| approved package | final-renderable runtime artifacts only | approval process | registry/renderer | `templates/institutions/<institution>/<document_type>/` |
 | canonical content | `template_id` and canonical `field_id -> value` | agent/direct caller | validator/renderer | per-render `content.json` |
 
 Schemas:
@@ -87,7 +88,8 @@ user request
 
 The request is saved as `template_request.json` in the candidate root. The
 entry layer creates an opaque `cand_<uuid>` candidate ID. On approval the
-request and semantic contract are copied unchanged into the approved package.
+request is preserved in audit, while a semantic contract is copied unchanged
+into the approved runtime package when DOCUMENT_RENDER consumes it.
 
 The semantic contract is the only source for:
 
@@ -129,6 +131,8 @@ Design Contract's `label_width_ratio` rather than a fixed 1:1 split.
 
 ### Candidate and approval lifecycle
 
+Storage-boundary implementation: [approved runtime / audit separation](tasks/approved-runtime-audit-separation.md).
+
 ```text
 candidate -- machine QA --> reviewed candidate
 reviewed candidate -- visual approval + gate --> approved
@@ -139,15 +143,23 @@ are never registry-visible. An approved package is stored only at
 `templates/institutions/<institution>/<document_type>/`; the active revision's
 immutable identity is `(institution, document_type, template_id)`.
 
+Registration validates the complete candidate first, then stores only
+DOCUMENT_RENDER artifacts in the approved package and preserves every excluded
+candidate artifact under `templates/audit/<template_id>/`. DOCUMENT_RENDER
+must not read the audit directory.
+
 The approval gate requires source HWPX, rendered sections and
 placeholder/location mapping, machine-QA evidence, request/semantic/spec
 contracts, design provenance, required-field/final-render metadata, recorded
-human visual approval, and explicit `--approve`.
+human visual approval, and explicit `--approve`. Runtime artifacts are stored
+in approved only after these candidate checks pass; non-runtime evidence is
+stored in audit without weakening the gate.
 
-Current `qa_hwpx_template.py` allows arbitrary `--output-dir` and current
-registration does not require all of these artifacts. A current `approved`
-status is registry-approved only, not yet product-approved by this contract.
-Enforcement is a defined implementation gap.
+Current `qa_hwpx_template.py` still allows arbitrary `--output-dir`.
+Registration enforces the contract-complete candidate artifacts, matching QA
+and human-review evidence, explicit approval, and separate approved/audit
+storage; source-extracted legacy candidates retain their existing renderability
+gate.
 
 ## DOCUMENT_RENDER
 

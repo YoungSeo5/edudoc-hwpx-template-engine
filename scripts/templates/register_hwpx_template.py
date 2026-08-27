@@ -31,6 +31,12 @@ def main(argv: list[str] | None = None) -> int:
         help="정식 템플릿 루트",
     )
     parser.add_argument(
+        "--candidate-root",
+        type=Path,
+        default=ROOT / "sandbox" / "template-candidates",
+        help="후보가 반드시 그 안에 있어야 하는 candidate root",
+    )
+    parser.add_argument(
         "--approve",
         action="store_true",
         help="후보를 승인해 등록한다는 사용자의 명시적 의사",
@@ -42,6 +48,7 @@ def main(argv: list[str] | None = None) -> int:
             args.candidate,
             registry_root=args.registry_root,
             approve=args.approve,
+            candidate_root=args.candidate_root,
         )
     except (OSError, json.JSONDecodeError, TemplateRegistrationError) as exc:
         print(
