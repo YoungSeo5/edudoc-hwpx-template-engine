@@ -4,6 +4,13 @@
 
 COMPLETE
 
+> **2026-08-27 정정**: 이 task가 선택한 audit 경로(`templates/audit/<template_id>/`,
+> registry_root 밖 public superproject 내부)는 registry_root가 private
+> submodule일 때 private institution artifact를 public repo로 유출하는 P0
+> 결함으로 확인되어, 후속 commit(`fix: keep registration audit artifacts
+> private`)에서 `<registry_root>/_audit/<template_id>/`(registry_root 내부)로
+> 교체됐다. 이 문서의 나머지 서술은 그 시점의 설계 기록으로 남긴다.
+
 ## Parent system contract
 
 `docs/product-workflow-contract.md`

@@ -37,7 +37,7 @@ Observed reference-layout evidence remains in
 | Institution Design Contract | institution defaults, masthead policy, asset refs | institution/product policy | authoring planner | `templates/institutions/<institution>/_design/design.json` |
 | executable `TemplateSpec` | concrete ordered document layout and provenance references | authoring planner | HWPX author, page-count validator | candidate then approved runtime when present |
 | candidate | review HWPX, contracts, QA evidence | code | QA/human | `sandbox/template-candidates/<candidate_id>/` |
-| audit | QA, human review, authoring provenance, and non-runtime candidate evidence | approval process | audit/review | `templates/audit/<template_id>/` |
+| audit | QA, human review, authoring provenance, and non-runtime candidate evidence | approval process | audit/review | `<registry_root>/_audit/<template_id>/` |
 | approved package | final-renderable runtime artifacts only | approval process | registry/renderer | `templates/institutions/<institution>/<document_type>/` |
 | canonical content | `template_id` and canonical `field_id -> value` | agent/direct caller | validator/renderer | per-render `content.json` |
 
@@ -145,7 +145,9 @@ immutable identity is `(institution, document_type, template_id)`.
 
 Registration validates the complete candidate first, then stores only
 DOCUMENT_RENDER artifacts in the approved package and preserves every excluded
-candidate artifact under `templates/audit/<template_id>/`. DOCUMENT_RENDER
+candidate artifact under `<registry_root>/_audit/<template_id>/` — inside the
+registry root itself, never beside it, so a private `registry_root` submodule
+never leaks audit evidence into the public superproject. DOCUMENT_RENDER
 must not read the audit directory.
 
 The approval gate requires source HWPX, rendered sections and
