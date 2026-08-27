@@ -89,6 +89,7 @@ def test_registration_separates_approved_runtime_from_audit_evidence(
     # Then: approved is runtime-only and every excluded artifact is in audit.
     assert _relative_files(result.destination) == {
         "alias_map.json",
+        "content.sample.json",
         "family_recipe.json",
         "placeholder_map.json",
         "source.hwpx",
@@ -97,9 +98,10 @@ def test_registration_separates_approved_runtime_from_audit_evidence(
         "template/section0.template.xml",
         "template_spec.json",
     }
-    audit = tmp_path / "audit" / "runtime_audit_demo"
+    # audit lives inside registry_root (the private submodule boundary), never
+    # beside it — a sibling directory would land in the public superproject.
+    audit = registry_root / "_audit" / "runtime_audit_demo"
     assert _relative_files(audit) == {
-        "content.sample.json",
         "content.test.json",
         "extraction_report.md",
         "human_review.json",
@@ -118,6 +120,9 @@ def test_registration_separates_approved_runtime_from_audit_evidence(
     }
     assert json.loads((result.destination / "template.json").read_text())["status"] == "approved"
     assert not candidate.exists()
+    # And: nothing lands beside registry_root, where a real registry_root is a
+    # private submodule and a sibling directory would be public-repo-tracked.
+    assert not (registry_root.parent / "audit").exists()
 
 
 def test_failed_registration_confirmation_removes_runtime_and_audit_copies(
@@ -143,4 +148,4 @@ def test_failed_registration_confirmation_removes_runtime_and_audit_copies(
     # Then: only the original candidate remains.
     assert candidate.is_dir()
     assert not (registry_root / "edudoc" / "runtime-audit-demo").exists()
-    assert not (tmp_path / "audit" / "runtime_audit_demo").exists()
+    assert not (registry_root / "_audit" / "runtime_audit_demo").exists()

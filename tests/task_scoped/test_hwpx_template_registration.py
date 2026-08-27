@@ -82,9 +82,13 @@ def test_registration_creates_official_path_and_registry_finds_it(tmp_path: Path
     assert not candidate.exists()
     assert (destination / "source.hwpx").is_file()
     assert not (destination / "raw").exists()
+    assert (destination / "content.sample.json").is_file()
+    # audit lives inside registry_root, never beside it (registry_root is a
+    # private submodule; a sibling directory would be public-repo-tracked).
     assert (
-        tmp_path / "audit" / "ulsan_legislative_notice" / "raw" / "section0.xml"
+        registry_root / "_audit" / "ulsan_legislative_notice" / "raw" / "section0.xml"
     ).is_file()
+    assert not (tmp_path / "audit").exists()
 
     data = json.loads((destination / "template.json").read_text(encoding="utf-8"))
     assert data["status"] == "approved"
