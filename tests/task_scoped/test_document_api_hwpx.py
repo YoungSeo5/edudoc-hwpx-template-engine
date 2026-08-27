@@ -91,6 +91,7 @@ def test_document_api_renders_with_existing_orchestrator(tmp_path: Path) -> None
         _content(),
         output,
         EXECUTION_CONTEXT,
+        content_template_id="fss_director_report",
     )
 
     with zipfile.ZipFile(result.output) as package:
@@ -113,4 +114,5 @@ def test_document_api_preserves_source_overwrite_guard() -> None:
             _content(),
             TEMPLATE_DIR / "source.hwpx",
             EXECUTION_CONTEXT,
+            content_template_id="fss_director_report",
         )

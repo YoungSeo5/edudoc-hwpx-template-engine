@@ -33,6 +33,7 @@ def test_approved_one_page_renders_through_public_document_api(
         content,
         output,
         context,
+        content_template_id="fss_one_page",
     )
 
     # Then: the public approved route returns a complete, strictly valid HWPX.

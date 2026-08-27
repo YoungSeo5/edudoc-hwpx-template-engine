@@ -17,9 +17,8 @@ from core.adapters.hwpx_template_input import (  # noqa: E402
 from core.adapters.hwpx_template_renderer import (  # noqa: E402
     HwpxTemplateRenderError,
     load_template_content,
-    orchestrate_hwpx_render,
 )
-from core.templates.registry import TemplateRegistry  # noqa: E402
+from core.document_api import render_approved_document  # noqa: E402
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -39,7 +38,6 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
     requested_at = datetime.now(timezone.utc)
 
-    registry = TemplateRegistry(ROOT / "templates" / "institutions")
     template_id: str | None = None
     try:
         execution_context = (
@@ -52,26 +50,13 @@ def main(argv: list[str] | None = None) -> int:
         )
         content = load_template_content(args.content)
         template_id = content.template_id
-        candidate = registry.find(args.institution, args.document_type)
-        if candidate is None:
-            raise HwpxTemplateRenderError(
-                "approved institution template not found: "
-                f"{args.institution} / {args.document_type}"
-            )
-        if content.template_id != candidate.identity.template_id:
-            raise HwpxTemplateRenderError(
-                "template_id mismatch: "
-                f"content={content.template_id!r}, "
-                f"approved={candidate.identity.template_id!r}"
-            )
-        template_dir = registry.template_path(
-            args.institution, args.document_type
-        ).parent
-        result = orchestrate_hwpx_render(
-            template_dir,
+        result = render_approved_document(
+            args.institution,
+            args.document_type,
             content.fields,
             args.output,
-            execution_context=execution_context,
+            execution_context,
+            content_template_id=content.template_id,
         )
     except (
         OSError,

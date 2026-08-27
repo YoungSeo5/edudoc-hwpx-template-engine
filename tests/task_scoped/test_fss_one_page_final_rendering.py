@@ -91,6 +91,7 @@ def test_one_page_renders_through_the_approved_template_boundary(
         _content(),
         output,
         EXECUTION_CONTEXT,
+        content_template_id="fss_one_page",
     )
 
     with zipfile.ZipFile(output) as package:
@@ -149,6 +150,7 @@ def test_one_page_preserves_recorded_marker_paragraph_styles(
         _content(),
         output,
         EXECUTION_CONTEXT,
+        content_template_id="fss_one_page",
     )
 
     with zipfile.ZipFile(output) as package:
@@ -229,6 +231,7 @@ def test_one_page_preserves_marker_leading_fwspaces(
         _content(),
         output,
         EXECUTION_CONTEXT,
+        content_template_id="fss_one_page",
     )
 
     with zipfile.ZipFile(output) as package:
@@ -285,6 +288,7 @@ def test_one_page_preserves_content_18_trailing_fwspaces(
         _content(),
         output,
         EXECUTION_CONTEXT,
+        content_template_id="fss_one_page",
     )
 
     with zipfile.ZipFile(output) as package:
@@ -316,6 +320,7 @@ def test_one_page_restores_table_cell_leading_fwspaces_after_skill_fill(
         _content(),
         output,
         EXECUTION_CONTEXT,
+        content_template_id="fss_one_page",
     )
 
     with zipfile.ZipFile(output) as package:
@@ -354,6 +359,7 @@ def test_one_page_restores_each_field_fwspace_in_a_filled_table_cell(
         _content(),
         output,
         EXECUTION_CONTEXT,
+        content_template_id="fss_one_page",
     )
 
     with zipfile.ZipFile(output) as package:

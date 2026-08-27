@@ -16,6 +16,8 @@ def test_cli_reports_a_native_page_pass(monkeypatch, capsys, tmp_path: Path) -> 
             observed_pages=1,
             reason=None,
             discovery=HancomAutomationDiscovery("available", "available", "available", "discovered-module"),
+            register_module_result=True,
+            open_succeeded=True,
         ),
     )
 

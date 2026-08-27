@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from collections.abc import Mapping
 from pathlib import Path
 from typing import Final
@@ -18,6 +19,11 @@ from core.adapters.hwpx_template_renderer import (
     RenderResult,
     orchestrate_hwpx_render,
 )
+from core.adapters.hwpx_template_authoring import (
+    HwpxTemplateAuthoringError,
+    load_template_spec,
+)
+from core.adapters.hancom_page_count import validate_native_page_count
 from core.templates.models import TemplateCandidate
 from core.templates.registry import TemplateRegistry
 
@@ -98,13 +104,34 @@ def render_approved_document(
     content: Mapping[str, JsonValue],
     output_path: Path,
     execution_context: RenderExecutionContext,
+    *,
+    content_template_id: str,
 ) -> RenderResult:
-    return orchestrate_hwpx_render(
-        _approved_template_dir(institution, document_type),
+    if not content_template_id:
+        raise HwpxTemplateRenderError("content template_id is required for final rendering")
+    template_dir = _approved_template_dir(
+        institution,
+        document_type,
+        content_template_id=content_template_id,
+    )
+    expected_pages = _native_page_count_contract(template_dir)
+    result = orchestrate_hwpx_render(
+        template_dir,
         content,
         output_path,
         execution_context=execution_context,
     )
+    if expected_pages is None:
+        return result
+    validation = validate_native_page_count(result.output, expected_pages)
+    if not validation.passed:
+        raise HwpxTemplateRenderError(
+            "native page validation failed: "
+            f"expected_pages={validation.expected_pages}, "
+            f"observed_pages={validation.observed_pages}, "
+            f"reason={validation.reason}"
+        )
+    return result
 
 
 def render_document_from_source(
@@ -133,10 +160,16 @@ def render_document_from_source(
         mapping.content,
         output_path,
         execution_context,
+        content_template_id=_template_id_from_placeholder_map(placeholder_map),
     )
 
 
-def _approved_template_dir(institution: str, document_type: str) -> Path:
+def _approved_template_dir(
+    institution: str,
+    document_type: str,
+    *,
+    content_template_id: str | None = None,
+) -> Path:
     registry = TemplateRegistry(_TEMPLATE_ROOT)
     candidate = registry.find(institution, document_type)
     if candidate is None:
@@ -144,4 +177,52 @@ def _approved_template_dir(institution: str, document_type: str) -> Path:
             "approved institution template not found: "
             f"{institution} / {document_type}"
         )
+    if content_template_id is not None and content_template_id != candidate.identity.template_id:
+        raise HwpxTemplateRenderError(
+            "template_id mismatch: "
+            f"content={content_template_id!r}, "
+            f"approved={candidate.identity.template_id!r}"
+        )
     return registry.template_path(institution, document_type).parent
+
+
+def _template_id_from_placeholder_map(placeholder_map: Mapping[str, JsonValue]) -> str:
+    template_id = placeholder_map.get("template_id")
+    if not isinstance(template_id, str) or not template_id:
+        raise HwpxTemplateRenderError("approved template has no valid template_id")
+    return template_id
+
+
+def _native_page_count_contract(template_dir: Path) -> int | None:
+    template_spec_path = template_dir / "template_spec.json"
+    if not template_spec_path.is_file():
+        return None
+    try:
+        spec = load_template_spec(template_spec_path)
+    except (HwpxTemplateAuthoringError, OSError, ValueError) as exc:
+        raise HwpxTemplateRenderError(
+            f"cannot resolve approved native page-count contract: {exc}"
+        ) from exc
+    if not spec.family_recipe_path:
+        return None
+    recipe_path = Path(spec.family_recipe_path)
+    try:
+        recipe = json.loads(recipe_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        raise HwpxTemplateRenderError(
+            f"cannot read approved family recipe: {recipe_path} ({exc})"
+        ) from exc
+    if not isinstance(recipe, dict):
+        raise HwpxTemplateRenderError(f"approved family recipe must be an object: {recipe_path}")
+    native_page_count = recipe.get("native_page_count")
+    if native_page_count is None:
+        return None
+    if (
+        not isinstance(native_page_count, int)
+        or isinstance(native_page_count, bool)
+        or native_page_count <= 0
+    ):
+        raise HwpxTemplateRenderError(
+            f"approved family recipe native_page_count must be a positive integer: {recipe_path}"
+        )
+    return native_page_count
