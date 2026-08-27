@@ -10,6 +10,7 @@ from hashlib import sha256
 from pathlib import Path
 
 from .registry import TemplateRegistry
+from ..sandbox_paths import SandboxUnavailableError, require_sandbox_temp_root
 from .serialization import load_candidate
 from .hwpx_template_storage import (
     TemplateRegistrationError,
@@ -226,7 +227,11 @@ def _validate_legacy_candidate_renders(source: Path) -> None:
     fields = sample.get("fields") if isinstance(sample, dict) else None
     if not isinstance(fields, dict) or not fields:
         return
-    with tempfile.TemporaryDirectory() as tmp:
+    try:
+        sandbox_root = require_sandbox_temp_root()
+    except SandboxUnavailableError as exc:
+        raise TemplateRegistrationError(str(exc)) from exc
+    with tempfile.TemporaryDirectory(dir=sandbox_root) as tmp:
         try:
             result = render_candidate_roundtrip(
                 source, fields, Path(tmp) / "registration_renderability_check.hwpx"
