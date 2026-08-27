@@ -36,8 +36,17 @@ if str(ROOT) not in sys.path:
 
 from core import sandbox_paths  # noqa: E402
 from core.adapters import hwpx_page_fit as page_fit_module  # noqa: E402
-from core.adapters.hwpx_page_fit import render_one_page_with_page_fit  # noqa: E402
+from core.adapters.hancom_page_count import (  # noqa: E402
+    HancomAutomationDiscovery,
+    NativePageValidation,
+)
+from core.adapters.hwpx_authoring_resolve import HwpxAuthoringResolveError  # noqa: E402
+from core.adapters.hwpx_page_fit import (  # noqa: E402
+    HwpxPageFitError,
+    render_one_page_with_page_fit,
+)
 from core.adapters.hwpx_template_authoring import load_template_spec  # noqa: E402
+from core.adapters.hwpx_template_renderer import HwpxTemplateRenderError  # noqa: E402
 
 _FIXTURES = ROOT / "tests" / "fixtures" / "business-status-one-page"
 _SPEC = _FIXTURES / "template_spec.json"
@@ -163,6 +172,89 @@ def test_page_fit_measurement_uses_the_repository_sandbox_not_os_temp(
     _render(0, 0, "sandbox-check", tmp_path)
 
     assert seen_dirs == [sandbox_paths.ROOT / "sandbox"]
+
+
+def test_authoring_failure_raises_instead_of_reporting_ok_false(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A caller-fixable authoring/config defect must not look like a
+    legitimate page-overflow outcome (ok=False)."""
+    spec = load_template_spec(_SPEC)
+
+    def _broken_resolve(*args, **kwargs):
+        raise HwpxAuthoringResolveError("boom")
+
+    monkeypatch.setattr(page_fit_module, "resolve", _broken_resolve)
+
+    with pytest.raises(HwpxPageFitError, match="authoring failed"):
+        render_one_page_with_page_fit(
+            template_spec=spec,
+            semantic_contract_path=_SEMANTIC,
+            institution_design_path=_DESIGN,
+            content=_base_content(),
+            output_path=tmp_path / "authoring-failure.hwpx",
+            institution="edudoc",
+            template_id=f"page-fit-authoring-failure-{uuid.uuid4().hex}",
+        )
+
+
+def test_render_failure_raises_instead_of_reporting_ok_false(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A caller-fixable render defect must not look like a legitimate
+    page-overflow outcome (ok=False)."""
+    spec = load_template_spec(_SPEC)
+
+    def _broken_render(*args, **kwargs):
+        raise HwpxTemplateRenderError("boom")
+
+    monkeypatch.setattr(page_fit_module, "render_candidate_roundtrip", _broken_render)
+
+    with pytest.raises(HwpxPageFitError, match="render failed"):
+        render_one_page_with_page_fit(
+            template_spec=spec,
+            semantic_contract_path=_SEMANTIC,
+            institution_design_path=_DESIGN,
+            content=_base_content(),
+            output_path=tmp_path / "render-failure.hwpx",
+            institution="edudoc",
+            template_id=f"page-fit-render-failure-{uuid.uuid4().hex}",
+        )
+
+
+def test_content_incomplete_despite_correct_page_count_raises(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A correct page count with leftover placeholders is a content/mapping
+    defect, not a page-fit outcome — it must not report ok=False either."""
+    spec = load_template_spec(_SPEC)
+    content = dict(_base_content())
+    del content["decision_request"]  # leaves {{decision_request}} unresolved
+
+    monkeypatch.setattr(
+        page_fit_module,
+        "validate_native_page_count",
+        lambda *_args, **_kwargs: NativePageValidation(
+            passed=True,
+            expected_pages=1,
+            observed_pages=1,
+            reason=None,
+            discovery=HancomAutomationDiscovery("available", "available", "available", "test-module"),
+            register_module_result=True,
+            open_succeeded=True,
+        ),
+    )
+
+    with pytest.raises(HwpxPageFitError, match="content incomplete"):
+        render_one_page_with_page_fit(
+            template_spec=spec,
+            semantic_contract_path=_SEMANTIC,
+            institution_design_path=_DESIGN,
+            content=content,
+            output_path=tmp_path / "content-incomplete.hwpx",
+            institution="edudoc",
+            template_id=f"page-fit-content-incomplete-{uuid.uuid4().hex}",
+        )
 
 
 def test_resolve_no_longer_accepts_a_density_profile_argument() -> None:

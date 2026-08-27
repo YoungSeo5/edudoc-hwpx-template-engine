@@ -23,7 +23,11 @@ family는 `native_page_count`(현재 항상 1) 검증 게이트를 갖고 있지
    PageCount를 측정한다.
 2. **실패**: 측정된 PageCount가 family recipe의 `native_page_count`와 다르면
    `PageFitResult.ok = False`를 정직하게 반환한다 — 압축을 시도하지 않고,
-   성공한 문서로 위장하지도 않는다.
+   성공한 문서로 위장하지도 않는다. 이는 콘텐츠가 실제로 `expected_pages`에
+   들어가지 않는다는 정상적인 측정 결과에만 쓰인다. authoring/render 실패나
+   콘텐츠 불완전(leftover placeholder·missing field)처럼 호출자가 고쳐야 할
+   설정/입력 문제는 `ok=False`로 위장하지 않고 `HwpxPageFitError`를 그대로
+   던진다.
 3. **진단**: 실패 시 무엇을 측정했는지(기대 페이지 수, 실제 관찰된 페이지 수,
    placeholder/필드 완결성)를 `PageFitAttempt`에 그대로 남겨, 사람이 원인을
    추적할 수 있게 한다.
@@ -103,9 +107,14 @@ def render_one_page_with_page_fit(
     measure its real Hancom PageCount — no automatic compaction.
 
     Returns ``ok=True`` (and writes *output_path*) only if the single
-    measured attempt already matches *expected_pages*. Otherwise returns
-    ``ok=False`` with the measured attempt recorded for diagnosis, and does
-    not write *output_path* — never a document disguised as successful.
+    measured attempt already matches *expected_pages*. Returns ``ok=False``
+    with the measured attempt recorded for diagnosis only when PageCount was
+    actually measured and genuinely does not match — content that honestly
+    does not fit in *expected_pages*. It never writes *output_path* in that
+    case — never a document disguised as successful. Any other failure
+    (authoring, rendering, or content left incomplete despite a correct page
+    count) is a caller-fixable configuration/input problem and raises
+    ``HwpxPageFitError`` instead of being folded into ``ok=False``.
     """
     spec = template_spec
     if expected_pages is None:
@@ -187,29 +196,19 @@ def _attempt_default(
         ValueError,
         OSError,
     ) as exc:
-        return (
-            PageFitAttempt(
-                native_page_validation=None,
-                leftover_placeholders=(),
-                missing_fields=(),
-                error=f"authoring failed: {exc}",
-            ),
-            None,
-        )
+        # A caller-fixable configuration/input problem (bad contract, bad
+        # design, bad TemplateSpec), not a "this content doesn't fit one
+        # page" outcome — raise rather than reporting it as ok=False, so a
+        # caller cannot mistake it for legitimate page overflow.
+        raise HwpxPageFitError(f"authoring failed: {exc}") from exc
 
     rendered_output = tmp_root / "rendered.hwpx"
     try:
         result: RenderResult = render_candidate_roundtrip(candidate_dir, content, rendered_output)
     except HwpxTemplateRenderError as exc:
-        return (
-            PageFitAttempt(
-                native_page_validation=None,
-                leftover_placeholders=(),
-                missing_fields=(),
-                error=f"render failed: {exc}",
-            ),
-            None,
-        )
+        # Same reasoning: a render failure is a caller-fixable defect, not a
+        # page-fit outcome.
+        raise HwpxPageFitError(f"render failed: {exc}") from exc
 
     validation = validate_native_page_count(rendered_output, expected_pages)
     attempt = PageFitAttempt(
@@ -218,9 +217,18 @@ def _attempt_default(
         missing_fields=tuple(result.missing_fields),
     )
     if not validation.passed:
+        # The only legitimate ok=False outcome: PageCount was actually
+        # measured and it does not match — the content genuinely does not
+        # fit in `expected_pages`.
         return attempt, None
     if result.leftover_placeholders or result.missing_fields:
-        return dataclass_replace(attempt, error="content incomplete despite page fit"), None
+        # The page count is right, but the supplied content did not fully
+        # resolve — a content/mapping defect, not a page-fit outcome.
+        raise HwpxPageFitError(
+            "content incomplete despite page fit: "
+            f"leftover_placeholders={list(result.leftover_placeholders)}, "
+            f"missing_fields={list(result.missing_fields)}"
+        )
     return attempt, rendered_output
 
 
