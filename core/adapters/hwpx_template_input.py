@@ -221,7 +221,11 @@ def prepare_hwpx_template_input(
             else None
         ),
     )
-    _validate_required_semantic_content(template_dir, resolved.render_plan.field_values)
+    _validate_required_semantic_content(
+        template_dir,
+        resolved.render_plan.field_values,
+        resolved.render_plan.collection_values,
+    )
     if resolved.metadata is not None and execution_context is None:
         raise HwpxTemplateInputError(
             f"template {resolved.template_id!r} requires execution_context "
@@ -246,7 +250,9 @@ def prepare_hwpx_template_input(
 
 
 def _validate_required_semantic_content(
-    template_dir: Path | str, fields: Mapping[str, JsonValue]
+    template_dir: Path | str,
+    fields: Mapping[str, JsonValue],
+    collection_values: Mapping[str, JsonValue],
 ) -> None:
     path = Path(template_dir) / "semantic_contract.json"
     if not path.is_file():
@@ -259,12 +265,25 @@ def _validate_required_semantic_content(
         for element in contract.elements
         if element.role == "CONTENT"
         and element.required
-        and (element.field_id not in fields or fields[element.field_id] == "확인 필요")
+        and _required_content_missing(element, fields, collection_values)
     ]
     if missing:
         raise HwpxTemplateInputError(
             f"required canonical semantic field(s) are missing or unresolved: {missing}"
         )
+
+
+def _required_content_missing(
+    element: object,
+    fields: Mapping[str, JsonValue],
+    collection_values: Mapping[str, JsonValue],
+) -> bool:
+    # A collection CONTENT element (item_fields non-empty) is never keyed by
+    # field_id in `fields` — resolve_hwpx_template_input() only ever puts its
+    # canonical_path into collection_values, so that is what "supplied" means.
+    if element.item_fields:
+        return element.field_id not in collection_values
+    return element.field_id not in fields or fields[element.field_id] == "확인 필요"
 
 
 def _collection_bindings(

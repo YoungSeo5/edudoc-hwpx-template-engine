@@ -127,3 +127,74 @@ def test_required_canonical_content_is_rejected_before_render(tmp_path: Path, ca
     candidate = _candidate(tmp_path, capsys)
     with pytest.raises(HwpxTemplateInputError, match="required canonical"):
         prepare_hwpx_template_input(candidate, {"report_period": "2026-08-18"})
+
+
+_COLLECTION_REQUEST = ROOT / "tests/fixtures/template-contracts/weekly-report-v2.template_request.json"
+_COLLECTION_SEMANTIC = ROOT / "tests/fixtures/template-contracts/weekly-report-v2.semantic_contract.json"
+_COLLECTION_SPEC = ROOT / "tests/fixtures/template-spec/weekly_report_one_page.template_spec.json"
+_COLLECTION_DESIGN = ROOT / "templates/institutions/edudoc/_design/design.json"
+
+_COLLECTION_SCALAR_CONTENT = {
+    "report_period": "2026-08-18",
+    "author": "홍길동",
+    "audience": "부서장",
+    "written_on": "2026-08-18",
+    "document_category": "정기",
+    "weekly_summary": "요약",
+    "achievements": "성과",
+    "risks": "위험",
+    "support_requests": "지원 요청",
+}
+
+
+def _collection_candidate(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> Path:
+    candidate = tmp_path / "collection_candidate"
+    assert author_hwpx_template.main(
+        [
+            "--template-request", str(_COLLECTION_REQUEST),
+            "--semantic-contract", str(_COLLECTION_SEMANTIC),
+            "--template-spec", str(_COLLECTION_SPEC),
+            "--institution-design", str(_COLLECTION_DESIGN),
+            "--output-dir", str(candidate),
+            "--institution", "edudoc",
+            "--document-type", "주간업무보고서",
+            "--template-id", "tpl_required_collection_test",
+        ]
+    ) == 0
+    assert json.loads(capsys.readouterr().out)["ok"] is True
+    # A minimal, empty alias_map.json is enough to route content through the
+    # alias_map branch of resolve_hwpx_template_input() — this is the branch
+    # that dropped a supplied collection's canonical_path into unknown_keys
+    # instead of collection_values.
+    (candidate / "alias_map.json").write_text(json.dumps({"fields": {}}), encoding="utf-8")
+    return candidate
+
+
+def test_required_collection_content_is_recognized_with_alias_map_present(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    candidate = _collection_candidate(tmp_path, capsys)
+    content = {
+        **_COLLECTION_SCALAR_CONTENT,
+        "major_tasks": [{"task_name": "업무 A", "status": "진행", "due_date": "8/22"}],
+        "next_week_plan": [{"level": 1, "text": "계획 A"}],
+    }
+
+    prepared = prepare_hwpx_template_input(candidate, content)
+
+    assert prepared.render_plan.collection_values["major_tasks"] == content["major_tasks"]
+    assert prepared.render_plan.collection_values["next_week_plan"] == content["next_week_plan"]
+
+
+def test_required_collection_still_rejected_when_actually_missing_with_alias_map(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    candidate = _collection_candidate(tmp_path, capsys)
+    content = {
+        **_COLLECTION_SCALAR_CONTENT,
+        "next_week_plan": [{"level": 1, "text": "계획 A"}],
+        # major_tasks intentionally omitted.
+    }
+
+    with pytest.raises(HwpxTemplateInputError, match="major_tasks"):
+        prepare_hwpx_template_input(candidate, content)
