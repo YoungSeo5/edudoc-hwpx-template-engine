@@ -35,6 +35,10 @@ class SnapshotMismatchError(ValueError):
     """Raised when the candidate's source.hwpx snapshot no longer matches --source."""
 
 
+class UnresolvedPlaceholderError(ValueError):
+    """Raised when the candidate's own sample/test roundtrip leaves {{...}} unresolved."""
+
+
 class NativePageValidationError(ValueError):
     """Raised when a required native Hancom page-count check does not pass."""
 
@@ -139,6 +143,13 @@ def main(argv: list[str] | None = None) -> int:
             test_fields,
             test_output,
         )
+        leftover = sorted(
+            set(sample_render.leftover_placeholders) | set(test_render.leftover_placeholders)
+        )
+        if leftover:
+            raise UnresolvedPlaceholderError(
+                f"candidate roundtrip left unresolved placeholders: {leftover}"
+            )
         native_page_validation = None
         if args.required_native_pages is not None:
             if args.required_native_pages <= 0:
@@ -221,6 +232,12 @@ def main(argv: list[str] | None = None) -> int:
         failure["error_code"] = "native_page_validation_failed"
         failure["error"] = str(exc)
         failure["native_page_validation"] = exc.validation
+        _persist_and_print_failure(args.output_dir, failure)
+        return 1
+    except UnresolvedPlaceholderError as exc:
+        failure = _base_failure_summary(args, template_id, template_id_source)
+        failure["error_code"] = "unresolved_placeholder"
+        failure["error"] = str(exc)
         _persist_and_print_failure(args.output_dir, failure)
         return 1
     except (
