@@ -60,6 +60,17 @@ commands, paths, and literal error messages in their original language.
 - 변경 범위를 요청에 한정하고 사용자의 작업 트리 변경을 보존한다.
 - 생성된 출력물, 캐시, 로그, 추적되지 않는 파일을 구현 근거로 쓰지 않는다.
 - 현재 소스·연결·테스트 근거 없이 완료, 검증, 사용 가능, 승인, 배포를 주장하지 않는다.
+- 계획만 제시하고 실행 없이 작업을 종료하지 않는다. 사람의 승인이 필요한 지점(예: 후보
+  승인, commit/push, 파일 삭제)이 아니라면 구현과 검증까지 진행한다.
+- 사용자가 요청하지 않은 capability, 옵션, 설정 가능성을 임의로 추가하지 않는다.
+- 임시 worktree 안에서 실제 repository, submodule, template registry 또는
+  삭제되면 안 되는 사용자 데이터 폴더를 가리키는 Windows Junction,
+  directory symlink 등의 디렉터리 링크를 만들지 않는다.
+- `git worktree remove --force` 실행 전 해당 worktree에 외부 디렉터리로
+  연결되는 Junction, symlink 등의 reparse point가 없는지 확인한다.
+  외부 경로로 연결된 항목이 있으면 worktree를 강제 삭제하지 않는다.
+  자세한 cleanup 규칙은
+  [Work-Unit Execution Policy](docs/agent-policies/work-unit-execution.md)를 따른다.
 
 ## Dependencies
 
