@@ -11,8 +11,8 @@ HWPX 기반 템플릿 생성 시 다음 두 종류의 정보를 구분하여 관
 
 2. **기관 문서의 공통 조판 구조**
 
-   * 기존 기관 HWPX 문서들을 분석하여 추출한 디자인·레이아웃 기준
-   * 새 템플릿을 생성할 때 기본값으로 사용하는 기관별 조판 Baseline
+   * 기존 기관 HWPX 문서들을 분석하여 추출한 디자인·레이아웃 관찰 기준
+   * 기관별 실행 디자인 정책을 결정할 때 근거로 사용하는 조판 Baseline
 
 두 정보는 목적이 다르므로 별도의 문서와 계약으로 관리한다. 이 문서는 HWPX
 형식 및 공통 생성 규칙을 소유한다. baseline 관찰과 institution-level 실행 정책의
@@ -233,15 +233,17 @@ default는 별도 `templates/institutions/<institution>/_design/design.json` 계
 ```text
 기존 기관 HWPX 여러 개
         ↓
-공통 조판 규칙 분석
+조판 관찰과 variation 분석
         ↓
 layout-baseline.md 확정
         ↓
-반복적으로 재사용
+Institution Design(`design.json`)에 실행 기본값 채택
         ↓
-template_spec
-+
-문서 유형별 요구사항
+문서 유형별 요구사항을 TemplateSpec으로 명시
+        ↓
+Institution Design + TemplateSpec resolve
+        ↓
+Resolved Authoring Contract
         ↓
 authoring generator
         ↓
@@ -255,11 +257,11 @@ authoring generator
         ↓
 기존 baseline과 비교
         ↓
-기관 공통 규칙인지 판단
+관찰 evidence 갱신
         ↓
-layout-baseline.md 갱신
+Institution Design과 필요한 TemplateSpec 정책 검토
         ↓
-이후 생성되는 템플릿부터 적용
+채택된 계약을 사용하는 이후 self-authored template에 적용
 ```
 
 ---
@@ -404,9 +406,10 @@ layout-baseline.md 갱신
 
 ---
 
-# 8. 고정 요소
+# 8. 관찰된 고정 요소
 
-기관의 모든 자체 생성 문서에서 공통적으로 사용하는 요소를 별도로 정의한다.
+기관의 기존 문서에서 공통적으로 관찰되는 고정 요소를 Baseline에 기록한다.
+실제 self-authored 문서에서 사용할 고정 요소는 Institution Design에서 명시적으로 채택한다.
 
 예:
 
@@ -419,15 +422,18 @@ layout-baseline.md 갱신
 * 공통 표 스타일
 * 공통 제목 스타일
 
-고정 요소의 이미지 파일 등 실제 리소스는 별도의 `assets` 영역에서 관리하고, Baseline에는 해당 요소의 사용 규칙과 배치 기준을 기록한다.
+고정 요소의 이미지 파일 등 실제 리소스는 별도의 `assets` 영역에서 관리하고,
+Baseline에는 관찰된 사용 규칙과 배치 기준을 기록한다.
+실제 생성 시 적용할 리소스와 배치 정책은 Institution Design에서 정의한다.
 
 ---
 
 # 9. 문서 유형별 재정의
 
-기관 Baseline은 공통 기본값이며 모든 문서가 완전히 동일해야 한다는 의미는 아니다.
+Institution Design은 기관 수준의 실행 기본값이며 모든 문서가 완전히 동일해야 한다는 의미는 아니다.
 
-특정 문서 유형에서는 필요한 경우 다음 항목을 재정의할 수 있다.
+특정 문서 유형의 구체 layout은 TemplateSpec에서 명시한다. TemplateSpec은 선택한
+document-family recipe의 component default와 함께 다음 항목을 결정할 수 있다.
 
 * 제목 크기
 * 제목 배치
@@ -439,21 +445,73 @@ layout-baseline.md 갱신
 * 문서별 특수 Footer
 * 문서별 특수 레이아웃
 
-문서 유형별 명시적인 규칙이 없는 항목은 기관 Baseline을 사용한다.
+TemplateSpec이 Institution Design의 모든 값을 임의로 재정의할 수 있는 것은 아니다.
+문서별 override 가능 범위와 지원되는 layout capability는 해당 계약과 resolver가
+명시적으로 허용한 범위로 한정한다. 기관 정체성에 속하는 logo asset, font family,
+color, bold, border 정책은 Institution Design의 책임으로 유지한다.
 
-우선순위는 다음과 같다.
+TemplateSpec에 문서별 명시 규칙이 없는 visual value는 Institution Design의 값을
+사용한다. 단, 페이지 설정처럼 TemplateSpec이 완전한 명시를 요구하는 값은
+Institution Design에서 누락분을 채우지 않는다.
+
+`layout-baseline.md`는 이 실행 우선순위에 직접 참여하지 않는다. Baseline은
+Institution Design과 TemplateSpec을 결정하기 위한 관찰 evidence다.
+
+이 layout 해석 순서는 Semantic Template Contract가 각 요소를 CONTENT/FIXED로
+확정한 뒤에만 적용된다. 무엇이 CONTENT/FIXED인지, field_id·cardinality·
+requiredness가 무엇인지는 Institution Design과 TemplateSpec이 아니라 Semantic
+Template Contract가 결정하며, 그 계약 자체는 이 문서가 아니라
+[`contracts/template-authoring-contracts.md`](contracts/template-authoring-contracts.md)가
+소유한다. 규칙 우선순위는 다음과 같다.
 
 ```text
-문서 유형별 명시 규칙
+Semantic Template Contract (CONTENT/FIXED, field_id, cardinality, requiredness)
         ↓
-기관 layout-baseline
+Institution Design + TemplateSpec (아래 실행 입력 해석 순서)
         ↓
-HWPX 생성기의 일반 기본값
+구현(authoring generator)
 ```
+
+실행 입력의 해석 순서는 다음과 같다.
+
+```text
+TemplateSpec의 문서 유형별 명시 layout
++ 선택된 document-family recipe의 component default
+        ↓
+Institution Design의 style/table/masthead 정책
+        ↓
+Resolved Institution Design + TemplateSpec
+        ↓
+authoring generator
+```
+
+시각적 디자인 값에 대해서는 HWPX 생성기의 임의 기본값을 사용하지 않는다.
 
 ---
 
-# 10. XML ID 저장 금지
+# 10. Authoring 필수 규칙
+
+Authoring은 deterministic해야 한다.
+
+Authoring implementation은 resolve된 Institution Design과 TemplateSpec에 존재하지
+않는 시각적 디자인 결정을 새로 만들어서는 안 된다.
+
+누락된 시각적 디자인 값은 모델의 판단, 미적 추론 또는 임의의 decorative default로
+보완해서는 안 된다.
+
+Authoring generator가 사용할 수 있는 시각적 디자인 값은 resolve된 Institution
+Design과 TemplateSpec에서 온 값으로 한정한다. 선택된 document-family recipe의
+component default는 TemplateSpec 해석 과정의 일부로만 적용한다.
+
+`layout-baseline.md`의 관찰값을 authoring 단계에서 직접 runtime default로
+선택하거나 추론해서는 안 된다.
+
+HWPX 패키지 생성에 필요한 non-visual technical default는 명시적으로 정의된
+생성 규칙에 한해 사용할 수 있다.
+
+---
+
+# 11. XML ID 저장 금지
 
 `layout-baseline.md`에는 특정 HWPX 파일 내부의 XML ID를 조판 규칙으로 저장하지 않는다.
 
@@ -486,11 +544,11 @@ body:
   first_line_indent_mm: ...
 ```
 
-실제 HWPX 생성 시 authoring generator가 이 값을 기반으로 필요한 `charPr`, `paraPr` 등의 서식을 생성하고 해당 문서 내부의 ID를 배정한다.
+실제 HWPX 생성 시 authoring generator는 resolve된 Institution Design과 TemplateSpec의 조판 값을 기반으로 필요한 `charPr`, `paraPr` 등의 서식을 생성하고 해당 문서 내부의 ID를 배정한다.
 
 ---
 
-# 11. 역할 구분
+# 12. 역할 구분
 
 ## `hwpx-structure.md`
 
@@ -514,14 +572,21 @@ HWPX 파일 형식을 이해하기 위한 기술 문서이다.
 
 ## `layout-baseline.md`
 
-기관의 기존 문서에서 추출한 공통 조판 규칙을 정의하는 실행 기준 문서이다.
+기관의 기존 문서에서 추출한 공통 조판 관찰 evidence를 기록하는 문서이다.
 
-다음 작업에서 직접 참고한다.
+다음 작업의 근거로 사용한다.
 
-* 신규 `template_spec` 작성
-* 자체 HWPX 템플릿 생성
-* 기관 공통 디자인 적용
+* Institution Design 작성 및 갱신
+* 신규 `TemplateSpec` 작성
 * 신규 템플릿의 조판 검증
 * 레퍼런스 문서와 생성 결과 비교
 
-템플릿 생성기가 실제로 따라야 하는 기관별 조판 기준의 Source of Truth는 `layout-baseline.md`로 한다.
+`layout-baseline.md`는 authoring generator가 직접 적용하는 runtime 계약이 아니다.
+
+기관별 조판 관찰 evidence의 Source of Truth는 `layout-baseline.md`로 한다.
+실제 self-authored 문서에 적용하는 기관별 디자인 기본값의 Source of Truth는
+Institution Design으로 한다.
+
+특정 문서 유형의 명시적인 layout은 TemplateSpec에서 정의한다. authoring generator는
+resolve된 Institution Design과 TemplateSpec만을 시각적 디자인 결정의 실행 입력으로
+사용한다.
