@@ -107,7 +107,8 @@ def bind_semantic_contract(contract: SemanticContract, spec: TemplateSpec) -> Se
                         placement["prototype_level"] = str(item.level)
                         placements.append(placement)
                 else:
-                    placements.append(_fixed_placement(by_element, section.heading_element_id, section.heading_text, "FIXED_LABEL", index))
+                    if section.heading_text:
+                        placements.append(_fixed_placement(by_element, section.heading_element_id, section.heading_text, "FIXED_LABEL", index))
                     placements.append(_content_placement(by_field, section.field_id, index))
     placed_elements = {placement["element_id"] for placement in placements}
     missing_required = [

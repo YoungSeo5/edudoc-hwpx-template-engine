@@ -49,7 +49,7 @@ import os
 import subprocess
 import xml.etree.ElementTree as ET
 import zipfile
-from dataclasses import dataclass, replace
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import Any, Literal, Mapping, Union
 
@@ -147,13 +147,21 @@ class HierarchyItem:
 
 @dataclass(frozen=True, slots=True)
 class BodySection:
-    heading_style: str
-    heading_style_override: Mapping[str, Any]
+    """``heading_style``/``heading_text`` are optional as a pair: both set
+    means a FIXED_LABEL heading paragraph precedes the content (existing
+    behavior, unchanged); both absent (``""``) means this section renders
+    CONTENT only, with no heading paragraph at all. Declaring exactly one of
+    the two is invalid — see ``_parse_body_section()``, which is the only
+    place that enforces this both-or-neither rule.
+    """
+
     body_style: str
     body_style_override: Mapping[str, Any]
-    heading_text: str
     field_id: str
     sample_value: str
+    heading_style: str = ""
+    heading_style_override: Mapping[str, Any] = field(default_factory=dict)
+    heading_text: str = ""
     hierarchy_items: tuple[HierarchyItem, ...] = ()
     hierarchy_item_field: str = ""
     heading_element_id: str = ""
@@ -399,13 +407,33 @@ def _parse_info_table_section(index: int, item: Mapping[str, Any]) -> InfoTableS
 
 
 def _parse_body_section(index: int, item: Mapping[str, Any]) -> BodySection:
-    heading_style = _require_style_ref(index, item, "heading_style")
-    heading_style_override = _parse_style_override(index, item, "heading_style_override")
+    has_heading_text = "heading_text" in item
+    has_heading_style = "heading_style" in item
+    if has_heading_text != has_heading_style:
+        raise HwpxTemplateAuthoringError(
+            f"sections[{index}] must declare both heading_text and heading_style, or neither"
+        )
+    if has_heading_text:
+        heading_style = _require_style_ref(index, item, "heading_style")
+        heading_style_override = _parse_style_override(index, item, "heading_style_override")
+        heading_text = _require_nonempty_str(index, item, "heading_text")
+        heading_element_id = _optional_section_str(index, item, "heading_element_id")
+    else:
+        if "heading_style_override" in item:
+            raise HwpxTemplateAuthoringError(
+                f"sections[{index}].heading_style_override requires heading_text/heading_style to also be declared"
+            )
+        if "heading_element_id" in item:
+            raise HwpxTemplateAuthoringError(
+                f"sections[{index}].heading_element_id requires heading_text/heading_style to also be declared"
+            )
+        heading_style = ""
+        heading_style_override = {}
+        heading_text = ""
+        heading_element_id = ""
     body_style = _require_style_ref(index, item, "body_style")
     body_style_override = _parse_style_override(index, item, "body_style_override")
-    heading_element_id = _optional_section_str(index, item, "heading_element_id")
     content_element_id = _optional_section_str(index, item, "content_element_id")
-    heading_text = _require_nonempty_str(index, item, "heading_text")
     field_id = _require_nonempty_str(index, item, "field_id")
     hierarchy_items = _parse_hierarchy_items(index, item)
     hierarchy_item_field = _optional_section_str(index, item, "hierarchy_item_field") if hierarchy_items else ""
@@ -567,7 +595,8 @@ def validate_semantic_placements(
                         placement["prototype_level"] = str(item.level)
                         placements.append(placement)
                 else:
-                    placements.append(_semantic_placement(by_element, section.heading_element_id, "FIXED_LABEL", section_index, None, None))
+                    if section.heading_text:
+                        placements.append(_semantic_placement(by_element, section.heading_element_id, "FIXED_LABEL", section_index, None, None))
                     placements.append(_semantic_placement(by_element, section.content_element_id, "CONTENT", section_index, None, section.field_id))
             case unreachable:
                 raise HwpxTemplateAuthoringError(f"unsupported TemplateSpec section: {unreachable!r}")
@@ -738,7 +767,13 @@ class ResolvedSimpleTableSection:
 
 @dataclass(frozen=True, slots=True)
 class ResolvedBodySection:
-    heading_style: ResolvedTextStyle
+    """``heading_style`` is ``None`` exactly when the source ``BodySection``
+    declared no heading (see ``BodySection``'s docstring) — that is the sole
+    signal ``generate_source_hwpx()`` and ``_expected_non_table_entries()``
+    use to skip the heading paragraph.
+    """
+
+    heading_style: ResolvedTextStyle | None
     body_style: ResolvedTextStyle
     heading_text: str
     field_id: str
@@ -857,9 +892,10 @@ def generate_source_hwpx(resolved: ResolvedAuthoringContract, output_path: Path 
                             skeleton_pool,
                         )
                 else:
-                    _materialize_paragraph(
-                        doc, section, entry.heading_text, entry.heading_style, skeleton_pool
-                    )
+                    if entry.heading_style is not None:
+                        _materialize_paragraph(
+                            doc, section, entry.heading_text, entry.heading_style, skeleton_pool
+                        )
                     _materialize_paragraph(
                         doc, section, entry.sample_value, entry.body_style, skeleton_pool
                     )
@@ -1382,10 +1418,12 @@ def _expected_non_table_entries(
     ``build_separation_rules()``. When a masthead is present, a
     ``ResolvedTitleSection`` contributes no standalone paragraph either — its
     text was consumed by the masthead's center cell (also handled separately,
-    as the masthead's own table entry). Both exclusions must be applied
-    consistently whether or not semantic placements are in play, or the
-    (role, placement) pairing drifts out of alignment with the roles actually
-    materialized — this single function is the one place that decides it.
+    as the masthead's own table entry). A non-hierarchy ``ResolvedBodySection``
+    with ``heading_style is None`` contributes only its content paragraph, no
+    heading paragraph. All three exclusions must be applied consistently
+    whether or not semantic placements are in play, or the (role, placement)
+    pairing drifts out of alignment with the roles actually materialized —
+    this single function is the one place that decides it.
     """
     if resolved.semantic_placements:
         by_section_index: dict[int, list[Mapping[str, str]]] = {}
@@ -1412,7 +1450,8 @@ def _expected_non_table_entries(
             if entry.hierarchy_items:
                 pairs.extend((TextRole.CONTENT, None) for _ in entry.hierarchy_items)
             else:
-                pairs.append((TextRole.FIXED_TEXT, None))
+                if entry.heading_style is not None:
+                    pairs.append((TextRole.FIXED_TEXT, None))
                 pairs.append((TextRole.CONTENT, None))
     return tuple(pairs)
 

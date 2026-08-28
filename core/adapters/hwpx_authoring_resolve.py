@@ -568,11 +568,15 @@ def _resolve_section(
         )
         return ResolvedTitleSection(style=style, text=entry.text)
     if isinstance(entry, BodySection):
-        heading_style = _resolve_text_role(
-            styles,
-            entry.heading_style,
-            entry.heading_style_override,
-            context=f"body_section heading_style {entry.heading_style!r}",
+        heading_style = (
+            _resolve_text_role(
+                styles,
+                entry.heading_style,
+                entry.heading_style_override,
+                context=f"body_section heading_style {entry.heading_style!r}",
+            )
+            if entry.heading_text
+            else None
         )
         body_style = _resolve_text_role(
             styles,
