@@ -67,8 +67,7 @@
           "description": "Explicit width of the masthead's right (logo) table column.",
           "type": "number",
           "exclusiveMinimum": 0
-        }
-,
+        },
         "slots": {
           "description": "Left-to-right column structure of the masthead table, as an ordered list of slot roles. Must contain exactly one each of 'logo_left', 'title', and 'logo_right' (this version's masthead always has exactly these three roles, no fewer and no more) — but their left-to-right order is this institution's own declared decision. Column count is this array's length; authoring reads this array instead of assuming which column holds which role.",
           "type": "array",
@@ -135,6 +134,10 @@
           "description": "Optional literal text prefix materialized in front of this role's text (e.g. '■ ' before a heading). Absent means no prefix.",
           "type": "string",
           "minLength": 1
+        },
+        "keep_with_next": {
+          "description": "Keep this paragraph with the following paragraph during native HWPX pagination.",
+          "type": "boolean"
         }
       }
     },
@@ -154,6 +157,9 @@
           "type": "number",
           "exclusiveMinimum": 0,
           "exclusiveMaximum": 1
+        },
+        "cell_margin_mm": {
+          "$ref": "#/$defs/cellMargin"
         }
       }
     }
