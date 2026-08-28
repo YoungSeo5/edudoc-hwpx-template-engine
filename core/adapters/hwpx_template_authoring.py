@@ -67,7 +67,7 @@ _HWPUNIT_PER_MM = 7200 / 25.4
 _VALID_ALIGNS = ("left", "center")
 _MARGIN_KEYS = ("left", "right", "top", "bottom", "header", "footer")
 _REQUIRED_MARGIN_KEYS = ("left", "right", "top", "bottom")
-_SECTION_TYPES = ("title", "info_table", "simple_table", "body_section")
+_SECTION_TYPES = ("title", "info_table", "simple_table", "body_section", "content_box")
 
 # masthead는 1행 [로고/문서명/로고] 3-슬롯 표다(institution-design-contract-v1
 # 2026-08-18 사용자 결정). 어떤 칸이 어떤 role(logo_left/title/logo_right)인지는
@@ -169,7 +169,42 @@ class BodySection:
     type: Literal["body_section"] = "body_section"
 
 
-Section = Union[TitleSection, InfoTableSection, SimpleTableSection, BodySection]
+@dataclass(frozen=True, slots=True)
+class ContentBoxItem:
+    """One row of a ``ContentBoxSection`` — a single CONTENT field with no
+    FIXED_LABEL, styled independently of its sibling rows.
+    """
+
+    body_style: str
+    body_style_override: Mapping[str, Any]
+    field_id: str
+    sample_value: str
+    content_element_id: str = ""
+
+
+@dataclass(frozen=True, slots=True)
+class ContentBoxSection:
+    """A bordered, single-column table whose rows are CONTENT-only — no
+    FIXED_LABEL anywhere in the box. The smallest primitive that can
+    reproduce a reference layout where two or more distinct single-value
+    CONTENT fields (e.g. a press-release headline and subtitle) sit inside
+    one visible bordered box, each with its own style, with no label.
+
+    ``style`` references an existing institution *table* role purely for its
+    border/width — ``ResolvedTableStyle.label_style``/``value_style`` are
+    resolved by ``resolve()`` (reusing the existing table-role resolver
+    unchanged) but never used here, since this section has no label/value
+    concept. Each row's own text style comes from its ``ContentBoxItem.body_style``
+    instead, the same way ``BodySection.body_style`` works.
+    """
+
+    style: str
+    style_override: Mapping[str, Any]
+    items: tuple[ContentBoxItem, ...]
+    type: Literal["content_box"] = "content_box"
+
+
+Section = Union[TitleSection, InfoTableSection, SimpleTableSection, BodySection, ContentBoxSection]
 
 
 @dataclass(frozen=True, slots=True)
@@ -304,6 +339,11 @@ def _parse_sections(raw: Any) -> tuple[Section, ...]:
             sections.append(info_table)
         elif section_type == "simple_table":
             sections.append(_parse_simple_table_section(index, item))
+        elif section_type == "content_box":
+            content_box = _parse_content_box_section(index, item)
+            for content_box_item in content_box.items:
+                _check_duplicate_field_id(index, content_box_item.field_id, seen_field_ids)
+            sections.append(content_box)
         else:
             body = _parse_body_section(index, item)
             _check_duplicate_field_id(index, body.field_id, seen_field_ids)
@@ -498,6 +538,56 @@ def _parse_simple_table_section(index: int, item: Mapping[str, Any]) -> SimpleTa
     )
 
 
+def _parse_content_box_section(index: int, item: Mapping[str, Any]) -> ContentBoxSection:
+    style = _require_style_ref(index, item, "style")
+    style_override = _parse_style_override(index, item, "style_override")
+    raw_items = item.get("items")
+    if not isinstance(raw_items, list) or not raw_items:
+        raise HwpxTemplateAuthoringError(f"sections[{index}].items must be a non-empty list")
+    items = tuple(
+        _parse_content_box_item(index, item_index, raw_item)
+        for item_index, raw_item in enumerate(raw_items)
+    )
+    return ContentBoxSection(style=style, style_override=style_override, items=items)
+
+
+def _parse_content_box_item(index: int, item_index: int, raw_item: Any) -> ContentBoxItem:
+    if not isinstance(raw_item, dict):
+        raise HwpxTemplateAuthoringError(f"sections[{index}].items[{item_index}] must be an object")
+    body_style = raw_item.get("body_style")
+    if not isinstance(body_style, str) or not body_style.strip():
+        raise HwpxTemplateAuthoringError(
+            f"sections[{index}].items[{item_index}].body_style must be a non-empty string"
+        )
+    body_style_override = raw_item.get("body_style_override", {})
+    if not isinstance(body_style_override, dict):
+        raise HwpxTemplateAuthoringError(
+            f"sections[{index}].items[{item_index}].body_style_override must be an object"
+        )
+    field_id = raw_item.get("field_id")
+    if not isinstance(field_id, str) or not field_id.strip():
+        raise HwpxTemplateAuthoringError(
+            f"sections[{index}].items[{item_index}].field_id must be a non-empty string"
+        )
+    sample_value = raw_item.get("sample_value")
+    if not isinstance(sample_value, str) or not sample_value.strip():
+        raise HwpxTemplateAuthoringError(
+            f"sections[{index}].items[{item_index}].sample_value must be a non-empty string"
+        )
+    content_element_id = raw_item.get("content_element_id", "")
+    if not isinstance(content_element_id, str):
+        raise HwpxTemplateAuthoringError(
+            f"sections[{index}].items[{item_index}].content_element_id must be a string"
+        )
+    return ContentBoxItem(
+        body_style=body_style,
+        body_style_override=dict(body_style_override),
+        field_id=field_id,
+        sample_value=sample_value,
+        content_element_id=content_element_id,
+    )
+
+
 def _parse_hierarchy_items(index: int, item: Mapping[str, Any]) -> tuple[HierarchyItem, ...]:
     if "hierarchy" not in item and "items" not in item:
         return ()
@@ -598,6 +688,11 @@ def validate_semantic_placements(
                     if section.heading_text:
                         placements.append(_semantic_placement(by_element, section.heading_element_id, "FIXED_LABEL", section_index, None, None))
                     placements.append(_semantic_placement(by_element, section.content_element_id, "CONTENT", section_index, None, section.field_id))
+            case ContentBoxSection():
+                for item_index, box_item in enumerate(section.items):
+                    placements.append(
+                        _semantic_placement(by_element, box_item.content_element_id, "CONTENT", section_index, item_index, box_item.field_id)
+                    )
             case unreachable:
                 raise HwpxTemplateAuthoringError(f"unsupported TemplateSpec section: {unreachable!r}")
 
@@ -782,7 +877,35 @@ class ResolvedBodySection:
     type: Literal["body_section"] = "body_section"
 
 
-ResolvedSection = Union[ResolvedTitleSection, ResolvedInfoTableSection, ResolvedSimpleTableSection, ResolvedBodySection]
+@dataclass(frozen=True, slots=True)
+class ResolvedContentBoxItem:
+    body_style: ResolvedTextStyle
+    field_id: str
+    sample_value: str
+
+
+@dataclass(frozen=True, slots=True)
+class ResolvedContentBoxSection:
+    """``style`` is a full ``ResolvedTableStyle`` (same resolver as
+    ``info_table``/``simple_table``) but only its ``width_mm``/
+    ``border_width_mm``/``border_color``/``cell_margin_mm`` are used —
+    ``label_style``/``value_style`` are resolved and then ignored, since a
+    content box has no label/value concept; each row's style is its own
+    ``ResolvedContentBoxItem.body_style`` instead.
+    """
+
+    style: ResolvedTableStyle
+    items: tuple[ResolvedContentBoxItem, ...]
+    type: Literal["content_box"] = "content_box"
+
+
+ResolvedSection = Union[
+    ResolvedTitleSection,
+    ResolvedInfoTableSection,
+    ResolvedSimpleTableSection,
+    ResolvedBodySection,
+    ResolvedContentBoxSection,
+]
 
 
 @dataclass(frozen=True, slots=True)
@@ -899,6 +1022,8 @@ def generate_source_hwpx(resolved: ResolvedAuthoringContract, output_path: Path 
                     _materialize_paragraph(
                         doc, section, entry.sample_value, entry.body_style, skeleton_pool
                     )
+            elif isinstance(entry, ResolvedContentBoxSection):
+                _materialize_content_box(doc, section, entry, skeleton_pool)
             else:  # pragma: no cover - resolve() only ever builds the above
                 raise HwpxTemplateAuthoringError(f"unhandled section type: {entry!r}")
 
@@ -1132,6 +1257,43 @@ def _materialize_simple_table(
                 paragraph.char_pr_id_ref = value_char_pr
 
 
+def _materialize_content_box(
+    doc: Any, section: Any, entry: ResolvedContentBoxSection, skeleton_pool: list[Any]
+) -> None:
+    """1열 bordered table, 행마다 CONTENT 하나씩·label 없음.
+
+    ``entry.style``의 label/value style은 쓰지 않는다(border/width/
+    cell_margin만) — 각 행의 실제 텍스트 style은 그 행의
+    ``ResolvedContentBoxItem.body_style``다. 정렬(align)은 ``doc.styles.
+    apply_paragraph_format()``으로는 표 셀 문단에 적용할 수 없어(그 API는
+    ``doc.paragraphs`` 최상위 인덱스로만 대상을 찾는다) masthead 제목 셀과
+    같은 방식(``_ensure_paragraph_alignment()``)으로 처리한다.
+    """
+    style = entry.style
+    border_fill_id = doc.styles.ensure_border_fill(
+        border_width=f"{style.border_width_mm} mm",
+        border_color=style.border_color,
+    )
+    table = _add_table(
+        doc,
+        section,
+        skeleton_pool,
+        rows=len(entry.items),
+        cols=1,
+        border_fill_id_ref=border_fill_id,
+        width=round(style.width_mm * _HWPUNIT_PER_MM),
+    )
+    if style.cell_margin_mm is not None:
+        _set_table_cell_margin(table, style.cell_margin_mm)
+    for row_index, item in enumerate(entry.items):
+        char_pr = _ensure_run_for_style(doc, item.body_style)
+        para_pr = _ensure_paragraph_alignment(doc, item.body_style.align.upper())
+        table.set_cell_text(row_index, 0, item.sample_value)
+        for paragraph in table.cell(row_index, 0).paragraphs:
+            paragraph.char_pr_id_ref = char_pr
+            paragraph.para_pr_id_ref = para_pr
+
+
 #: masthead.slots가 선언할 수 있는 role별 실제 값 lookup — role 이름을 어느
 #: ``ResolvedMasthead`` 필드/materialize 동작에 연결할지는 여기 한 곳에서만
 #: 결정한다. 새 role을 추가하려면(이번 task 범위 밖) 이 dict와
@@ -1337,7 +1499,7 @@ def build_separation_rules(
     table_sections = [
         entry
         for entry in resolved.sections
-        if isinstance(entry, (ResolvedInfoTableSection, ResolvedSimpleTableSection))
+        if isinstance(entry, (ResolvedInfoTableSection, ResolvedSimpleTableSection, ResolvedContentBoxSection))
     ]
     expected_table_count = len(table_sections) + (1 if resolved.masthead is not None else 0)
     if len(table_indexes) != expected_table_count:
@@ -1384,6 +1546,12 @@ def build_separation_rules(
                 content_rule: dict[str, Any] = {"role": TextRole.CONTENT.value, "section": section, "table": table_index, "row": table_row, "col": label_column + 1}
                 if resolved.semantic_placements:
                     content_rule["field_id"] = row.field_id
+                rules.append(content_rule)
+        elif isinstance(table_section, ResolvedContentBoxSection):
+            for row_index, item in enumerate(table_section.items):
+                content_rule = {"role": TextRole.CONTENT.value, "section": section, "table": table_index, "row": row_index, "col": 0}
+                if resolved.semantic_placements:
+                    content_rule["field_id"] = item.field_id
                 rules.append(content_rule)
         else:
             for column_index in range(len(table_section.column_widths)):

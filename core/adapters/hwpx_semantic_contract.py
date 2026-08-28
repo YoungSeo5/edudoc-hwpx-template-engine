@@ -8,6 +8,7 @@ from typing import Any
 
 from .hwpx_template_authoring import (
     BodySection,
+    ContentBoxSection,
     InfoTableSection,
     SimpleTableSection,
     TemplateSpec,
@@ -110,6 +111,9 @@ def bind_semantic_contract(contract: SemanticContract, spec: TemplateSpec) -> Se
                     if section.heading_text:
                         placements.append(_fixed_placement(by_element, section.heading_element_id, section.heading_text, "FIXED_LABEL", index))
                     placements.append(_content_placement(by_field, section.field_id, index))
+            case ContentBoxSection():
+                for item_index, box_item in enumerate(section.items):
+                    placements.append(_content_placement(by_field, box_item.field_id, index, item_index))
     placed_elements = {placement["element_id"] for placement in placements}
     missing_required = [
         element.field_id

@@ -42,9 +42,12 @@ from typing import Any, Mapping
 
 from .hwpx_template_authoring import (
     BodySection,
+    ContentBoxSection,
     InfoTableSection,
     ResolvedAuthoringContract,
     ResolvedBodySection,
+    ResolvedContentBoxItem,
+    ResolvedContentBoxSection,
     ResolvedInfoTableSection,
     ResolvedSimpleTableSection,
     ResolvedLogo,
@@ -624,6 +627,35 @@ def _resolve_section(
             rows=entry.rows,
             pairs_per_row=entry.pairs_per_row,
         )
+    if isinstance(entry, ContentBoxSection):
+        # SimpleTableSection 위와 같은 패턴: content_box에는 label/value
+        # 개념이 없어 label/value override도 항상 빈 dict다 — 그래도
+        # _resolve_table_role()은 institution table role의 label_style_role/
+        # value_style_role을 여전히 resolve한다(존재 검증만, 이 섹션은 그
+        # 결과를 쓰지 않는다). 각 row의 실제 텍스트 style은 아래에서 개별
+        # ContentBoxItem.body_style로 따로 resolve한다.
+        table_style = _resolve_table_role(
+            tables,
+            styles,
+            entry.style,
+            entry.style_override,
+            {},
+            {},
+        )
+        items = tuple(
+            ResolvedContentBoxItem(
+                body_style=_resolve_text_role(
+                    styles,
+                    item.body_style,
+                    item.body_style_override,
+                    context=f"content_box item body_style {item.body_style!r}",
+                ),
+                field_id=item.field_id,
+                sample_value=item.sample_value,
+            )
+            for item in entry.items
+        )
+        return ResolvedContentBoxSection(style=table_style, items=items)
     raise HwpxAuthoringResolveError(f"unhandled section type: {entry!r}")  # pragma: no cover
 
 
