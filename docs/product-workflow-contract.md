@@ -143,6 +143,30 @@ are never registry-visible. An approved package is stored only at
 `templates/institutions/<institution>/<document_type>/`; the active revision's
 immutable identity is `(institution, document_type, template_id)`.
 
+### Active approved replacement (MVP)
+
+Each `(institution, document_type)` has at most one active approved runtime
+package at its canonical path. DOCUMENT_RENDER continues to resolve exactly
+that path; no active pointer is introduced.
+
+A candidate may replace an existing active package only after it passes the
+same complete approval gate as a first approval. Its `template_id` must differ
+from the active package's immutable `template_id`; registration never
+overwrites an existing revision with the same identity.
+
+Registration stages the new runtime and audit artifacts before touching the
+active package. It then moves the active package to a same-filesystem temporary
+backup, moves the staged runtime package to the canonical path, and confirms
+that `TemplateRegistry.find()` resolves the new identity. If that swap or its
+confirmation fails, it restores the backup before reporting failure. Candidate
+cleanup occurs only after a successful replacement.
+
+This MVP retains no persistent runtime revision archive, active-pointer
+history, or rollback product feature. A successful replacement leaves only the
+new runtime package at the canonical path. Existing `_audit/<old_template_id>`
+evidence is retained, and registration adds `_audit/<new_template_id>` evidence
+for the new revision. The temporary backup is removed only after success.
+
 Registration validates the complete candidate first, then stores only
 DOCUMENT_RENDER artifacts in the approved package and preserves every excluded
 candidate artifact under `<registry_root>/_audit/<template_id>/` — inside the

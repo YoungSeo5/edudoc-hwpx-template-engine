@@ -11,6 +11,12 @@ COMPLETE
 > private`)에서 `<registry_root>/_audit/<template_id>/`(registry_root 내부)로
 > 교체됐다. 이 문서의 나머지 서술은 그 시점의 설계 기록으로 남긴다.
 
+> **2026-08-28 후속 계약**: active approved replacement의 staging/temporary-backup
+> swap은 [Product workflow contract](../product-workflow-contract.md)의
+> `Active approved replacement (MVP)`이 소유한다. 이 task의 기존 approved
+> migration 제외는 당시 이 task의 범위였으며, 새 persistent revision archive나
+> rollback product feature를 뜻하지 않는다.
+
 ## Parent system contract
 
 `docs/product-workflow-contract.md`

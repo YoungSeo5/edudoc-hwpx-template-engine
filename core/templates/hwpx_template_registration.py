@@ -8,6 +8,7 @@ import zipfile
 from dataclasses import dataclass
 from hashlib import sha256
 from pathlib import Path
+from uuid import uuid4
 
 from .registry import TemplateRegistry
 from ..sandbox_paths import SandboxUnavailableError, require_sandbox_temp_root
@@ -113,31 +114,57 @@ def register_hwpx_template_candidate(
             raise TemplateRegistrationError(
                 f"candidate already occupies its official path: {destination}"
             )
-        raise TemplateRegistrationError(
-            f"destination path already exists: {destination}"
-        )
+        active = registry.find(institution, document_type)
+        if active is None:
+            raise TemplateRegistrationError(
+                f"destination exists but is not an approved template: {destination}"
+            )
     reject_template_id_conflict(Path(registry_root), template_id)
     if audit.exists():
         raise TemplateRegistrationError(f"audit path already exists: {audit}")
 
-    # 흐름 3: 복사본으로 먼저 등록을 성립시킨다. 확인 전까지 후보 원본은 손대지
-    # 않으므로, 어느 단계에서 실패해도 후보는 그대로 남는다.
+    # 흐름 3: 새 runtime/audit 사본을 먼저 staging에 완성한다. 기존 active는 이
+    # 시점까지 전혀 건드리지 않는다.
     destination.parent.mkdir(parents=True, exist_ok=True)
-    copy_registration_artifacts(source, destination, audit)
-    write_approved_status(destination / "template.json")
+    audit.parent.mkdir(parents=True, exist_ok=True)
+    staging = _temporary_directory(destination.parent, destination.name, "staging")
+    audit_staging = _temporary_directory(audit.parent, audit.name, "staging")
+    backup = _temporary_backup_path(destination) if destination.exists() else None
+    new_active = False
+    try:
+        copy_registration_artifacts(source, staging, audit_staging)
+        write_approved_status(staging / "template.json")
+        if backup is not None:
+            _move_directory(destination, backup)
+        _move_directory(staging, destination)
+        new_active = True
 
-    # 흐름 4: 등록 성공은 registry가 실제로 찾을 수 있는지로만 확인한다.
-    # 확인에 실패하면 복사본을 지워 정식 경로에 미확인 결과를 남기지 않는다.
-    registered = registry.find(institution, document_type)
-    if registered is None or registered.identity.template_id != template_id:
-        shutil.rmtree(destination, ignore_errors=True)
-        shutil.rmtree(audit, ignore_errors=True)
-        raise TemplateRegistrationError(
-            "registration could not be confirmed by TemplateRegistry; "
-            f"the candidate was kept at {source}"
-        )
+        # 흐름 4: canonical path로 이동한 새 revision이 registry에서 실제로
+        # 선택되는지 확인한다. 실패하면 이전 active를 즉시 복구한다.
+        registered = registry.find(institution, document_type)
+        if registered is None or registered.identity.template_id != template_id:
+            raise TemplateRegistrationError(
+                "registration could not be confirmed by TemplateRegistry; "
+                f"the candidate was kept at {source}"
+            )
+        _move_directory(audit_staging, audit)
+    except (OSError, TemplateRegistrationError) as exc:
+        try:
+            _restore_previous_active(destination, backup, new_active)
+        except OSError as rollback_error:
+            raise TemplateRegistrationError(
+                "registration replacement failed and rollback could not restore "
+                f"the previous approved template: {rollback_error}"
+            ) from rollback_error
+        raise TemplateRegistrationError(f"registration replacement failed: {exc}") from exc
+    finally:
+        shutil.rmtree(staging, ignore_errors=True)
+        shutil.rmtree(audit_staging, ignore_errors=True)
 
-    # 흐름 5: 등록이 확인된 뒤에야 후보 원본을 지운다.
+    # 흐름 5: 성공한 swap의 temporary backup과 candidate 원본을 그 순서로
+    # 정리한다. audit은 persistent evidence이므로 절대 지우지 않는다.
+    if backup is not None:
+        shutil.rmtree(backup)
     shutil.rmtree(source)
     return TemplateRegistrationResult(
         institution=institution,
@@ -145,6 +172,29 @@ def register_hwpx_template_candidate(
         template_id=template_id,
         destination=destination,
     )
+
+
+def _temporary_directory(parent: Path, name: str, purpose: str) -> Path:
+    return Path(tempfile.mkdtemp(prefix=f".{name}.{purpose}-", dir=parent))
+
+
+def _temporary_backup_path(destination: Path) -> Path:
+    return destination.with_name(f".{destination.name}.backup-{uuid4().hex}")
+
+
+def _move_directory(source: Path, destination: Path) -> None:
+    source.rename(destination)
+
+
+def _restore_previous_active(
+    destination: Path,
+    backup: Path | None,
+    new_active: bool,
+) -> None:
+    if new_active and destination.exists():
+        shutil.rmtree(destination)
+    if backup is not None and backup.exists():
+        _move_directory(backup, destination)
 def _validate_candidate(source: Path) -> dict[str, str]:
     if not source.is_dir():
         raise TemplateRegistrationError(f"candidate directory not found: {source}")

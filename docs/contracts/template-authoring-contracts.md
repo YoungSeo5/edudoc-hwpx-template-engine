@@ -30,6 +30,17 @@ is always `templates/institutions/<institution>/<document_type>/`. The latter
 has exactly one active approved template per institution/document-type path;
 its `template_id` remains the canonical immutable revision identity.
 
+An approved candidate with a different `template_id` may replace the active
+package only after the full approval gate passes. Registration stages the new
+runtime package, swaps the canonical directory through a same-filesystem
+temporary backup, and restores that backup if the canonical move or registry
+confirmation fails. The candidate is retained until the replacement succeeds.
+
+The canonical path retains only the active runtime package. This contract does
+not create a persistent revision archive, active pointer, or rollback feature.
+Audit evidence is persistent per revision: `_audit/<old_template_id>` remains,
+and `_audit/<new_template_id>` is added for the replacement.
+
 `templates/institutions/` is a protected data submodule. This repository
 defines that layout but does not create or edit its institution data.
 

@@ -15,6 +15,7 @@ from pathlib import Path
 
 import pytest
 
+import core.templates.hwpx_template_registration as registration
 from core.templates.hwpx_template_registration import (
     TemplateRegistrationError,
     register_hwpx_template_candidate,
@@ -98,25 +99,129 @@ def test_registration_creates_official_path_and_registry_finds_it(tmp_path: Path
     assert registered.identity.template_id == "ulsan_legislative_notice"
 
 
-def test_duplicate_destination_path_stops_registration(tmp_path: Path) -> None:
+def test_new_template_id_replaces_existing_approved_runtime_and_preserves_audits(
+    tmp_path: Path,
+) -> None:
     registry_root = tmp_path / "institutions"
+    old = _make_candidate(tmp_path / "first", template_id="ulsan_v1")
     register_hwpx_template_candidate(
-        _make_candidate(tmp_path / "first"),
+        old,
         registry_root=registry_root,
         approve=True,
     )
-    second = _make_candidate(tmp_path / "second", template_id="ulsan_other_notice")
+    second = _make_candidate(tmp_path / "second", template_id="ulsan_v2")
 
-    with pytest.raises(TemplateRegistrationError, match="destination path already exists"):
-        register_hwpx_template_candidate(
-            second,
-            registry_root=registry_root,
-            approve=True,
-        )
+    result = register_hwpx_template_candidate(
+        second,
+        registry_root=registry_root,
+        approve=True,
+    )
 
-    assert second.is_dir()
-    data = json.loads((second / "template.json").read_text(encoding="utf-8"))
-    assert data["status"] == "candidate"
+    destination = registry_root / "울산광역시" / "입법예고"
+    assert result.template_id == "ulsan_v2"
+    assert not second.exists()
+    assert TemplateRegistry(registry_root).find("울산광역시", "입법예고").identity.template_id == "ulsan_v2"
+    assert (registry_root / "_audit" / "ulsan_v1" / "raw" / "section0.xml").is_file()
+    assert (registry_root / "_audit" / "ulsan_v2" / "raw" / "section0.xml").is_file()
+    assert not list(destination.parent.glob(".입법예고.*"))
+
+
+def test_invalid_replacement_keeps_existing_approved_package_byte_for_byte(
+    tmp_path: Path,
+) -> None:
+    registry_root = tmp_path / "institutions"
+    register_hwpx_template_candidate(
+        _make_candidate(tmp_path / "first", template_id="ulsan_v1"),
+        registry_root=registry_root,
+        approve=True,
+    )
+    destination = registry_root / "울산광역시" / "입법예고"
+    before = (destination / "template.json").read_bytes()
+    invalid = _make_candidate(tmp_path / "invalid", template_id="ulsan_v2")
+    (invalid / "source.hwpx").unlink()
+
+    with pytest.raises(TemplateRegistrationError, match="missing required files"):
+        register_hwpx_template_candidate(invalid, registry_root=registry_root, approve=True)
+
+    assert (destination / "template.json").read_bytes() == before
+    assert invalid.is_dir()
+    assert not (registry_root / "_audit" / "ulsan_v2").exists()
+
+
+def test_staging_failure_keeps_existing_approved_package_and_candidate(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    registry_root = tmp_path / "institutions"
+    register_hwpx_template_candidate(
+        _make_candidate(tmp_path / "first", template_id="ulsan_v1"),
+        registry_root=registry_root,
+        approve=True,
+    )
+    destination = registry_root / "울산광역시" / "입법예고"
+    before = (destination / "template.json").read_bytes()
+    candidate = _make_candidate(tmp_path / "second", template_id="ulsan_v2")
+
+    def fail_staging(source: Path, approved: Path, audit: Path) -> None:
+        raise OSError("staging copy failed")
+
+    monkeypatch.setattr(registration, "copy_registration_artifacts", fail_staging)
+
+    with pytest.raises(TemplateRegistrationError, match="staging copy failed"):
+        register_hwpx_template_candidate(candidate, registry_root=registry_root, approve=True)
+
+    assert (destination / "template.json").read_bytes() == before
+    assert candidate.is_dir()
+    assert not (registry_root / "_audit" / "ulsan_v2").exists()
+
+
+def test_swap_failure_restores_existing_approved_package_and_keeps_candidate(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    registry_root = tmp_path / "institutions"
+    register_hwpx_template_candidate(
+        _make_candidate(tmp_path / "first", template_id="ulsan_v1"),
+        registry_root=registry_root,
+        approve=True,
+    )
+    destination = registry_root / "울산광역시" / "입법예고"
+    before = (destination / "template.json").read_bytes()
+    candidate = _make_candidate(tmp_path / "second", template_id="ulsan_v2")
+    real_move = registration._move_directory
+
+    def fail_new_destination_move(source: Path, target: Path) -> None:
+        if target == destination and ".staging-" in source.name:
+            raise OSError("canonical move failed")
+        real_move(source, target)
+
+    monkeypatch.setattr(registration, "_move_directory", fail_new_destination_move)
+
+    with pytest.raises(TemplateRegistrationError, match="canonical move failed"):
+        register_hwpx_template_candidate(candidate, registry_root=registry_root, approve=True)
+
+    assert (destination / "template.json").read_bytes() == before
+    assert TemplateRegistry(registry_root).find("울산광역시", "입법예고").identity.template_id == "ulsan_v1"
+    assert candidate.is_dir()
+    assert not (registry_root / "_audit" / "ulsan_v2").exists()
+    assert not list(destination.parent.glob(".입법예고.*"))
+
+
+def test_same_template_id_cannot_replace_existing_approved_artifact(tmp_path: Path) -> None:
+    registry_root = tmp_path / "institutions"
+    register_hwpx_template_candidate(
+        _make_candidate(tmp_path / "first", template_id="ulsan_v1"),
+        registry_root=registry_root,
+        approve=True,
+    )
+    replacement = _make_candidate(tmp_path / "second", template_id="ulsan_v1")
+    (replacement / "template.review.md").write_text("# different\n", encoding="utf-8")
+
+    with pytest.raises(TemplateRegistrationError, match="already registered"):
+        register_hwpx_template_candidate(replacement, registry_root=registry_root, approve=True)
+
+    assert replacement.is_dir()
+    assert TemplateRegistry(registry_root).find("울산광역시", "입법예고").identity.template_id == "ulsan_v1"
 
 
 def test_duplicate_template_id_stops_registration(tmp_path: Path) -> None:
