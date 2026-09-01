@@ -60,6 +60,10 @@ from core.adapters.hwpx_template_authoring import (  # noqa: E402
     load_template_spec,
     write_separation_rules,
 )
+from core.adapters.hancom_page_count import (  # noqa: E402
+    HancomAutomationDiscovery,
+    NativePageValidation,
+)
 from core.templates.hwpx_semantic_classifier import classify_document_semantics  # noqa: E402
 from core.templates.hwpx_semantic_contract import SemanticRole  # noqa: E402
 from core.templates.hwpx_separation_rules import load_separation_rules  # noqa: E402
@@ -691,6 +695,7 @@ def test_build_separation_rules_detects_structure_mismatch(tmp_path: Path) -> No
 def test_authored_source_hwpx_becomes_a_qa_candidate_via_existing_pipeline(
     tmp_path: Path,
     capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     resolved = _resolved_from_fixture(tmp_path)
     source_hwpx = generate_source_hwpx(resolved, tmp_path / "authoring" / "source.hwpx")
@@ -699,6 +704,21 @@ def test_authored_source_hwpx_becomes_a_qa_candidate_via_existing_pipeline(
     )
 
     candidate_dir = tmp_path / "candidate"
+    native_inputs: list[str] = []
+
+    def native_page_count(path: Path, expected_pages: int) -> NativePageValidation:
+        native_inputs.append(path.name)
+        return NativePageValidation(
+            passed=True,
+            expected_pages=expected_pages,
+            observed_pages=1,
+            reason=None,
+            discovery=HancomAutomationDiscovery("available", "available", "available", "test-module"),
+            register_module_result=True,
+            open_succeeded=True,
+        )
+
+    monkeypatch.setattr(qa_hwpx_template, "validate_native_page_count", native_page_count)
     exit_code = qa_hwpx_template.main(
         [
             "--source",
@@ -711,6 +731,8 @@ def test_authored_source_hwpx_becomes_a_qa_candidate_via_existing_pipeline(
             "주간업무보고서",
             "--rules",
             str(rules_path),
+            "--required-native-pages",
+            "1",
         ]
     )
 
@@ -722,6 +744,11 @@ def test_authored_source_hwpx_becomes_a_qa_candidate_via_existing_pipeline(
         "roundtrip.sample.hwpx": True,
         "roundtrip.test.hwpx": True,
     }
+    assert native_inputs == ["source.hwpx", "roundtrip.sample.hwpx", "roundtrip.test.hwpx"]
+    assert {
+        (item["passed"], item["expected_pages"], item["observed_pages"])
+        for item in summary["native_page_validation"].values()
+    } == {(True, 1, 1)}
 
     for required in (
         "template.json",
@@ -754,3 +781,54 @@ def test_authored_source_hwpx_becomes_a_qa_candidate_via_existing_pipeline(
 
     report = validate_hwpx_package(candidate_dir / "roundtrip.sample.hwpx")
     assert report.passed, report.summary()
+
+
+@pytest.mark.parametrize(
+    ("source_pages", "source_reason"),
+    [(2, None), (None, "native_page_validation_unavailable")],
+)
+def test_candidate_qa_fails_closed_when_source_native_page_check_fails(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    source_pages: int | None,
+    source_reason: str | None,
+) -> None:
+    resolved = _resolved_from_fixture(tmp_path)
+    source_hwpx = generate_source_hwpx(resolved, tmp_path / "authoring" / "source.hwpx")
+    rules_path = write_separation_rules(
+        build_separation_rules(resolved, source_hwpx), tmp_path / "authoring" / "rules.json"
+    )
+
+    def native_page_count(path: Path, expected_pages: int) -> NativePageValidation:
+        failed_source = path.name == "source.hwpx"
+        observed = source_pages if failed_source else 1
+        return NativePageValidation(
+            passed=not failed_source,
+            expected_pages=expected_pages,
+            observed_pages=observed,
+            reason=source_reason if failed_source else None,
+            discovery=HancomAutomationDiscovery("available", "available", "available", "test-module"),
+            register_module_result=True,
+            open_succeeded=source_reason is None,
+        )
+
+    monkeypatch.setattr(qa_hwpx_template, "validate_native_page_count", native_page_count)
+    candidate_dir = tmp_path / "candidate"
+    assert qa_hwpx_template.main(
+        [
+            "--source", str(source_hwpx),
+            "--output-dir", str(candidate_dir),
+            "--institution", "edudoc",
+            "--document-type", "주간업무보고서",
+            "--rules", str(rules_path),
+            "--required-native-pages", "1",
+        ]
+    ) == 1
+    report = json.loads((candidate_dir / "qa.report.json").read_text(encoding="utf-8"))
+    assert report["error_code"] == "native_page_validation_failed"
+    assert set(report["native_page_validation"]) == {
+        "source.hwpx",
+        "roundtrip.sample.hwpx",
+        "roundtrip.test.hwpx",
+    }
+    assert report["native_page_validation"]["source.hwpx"]["passed"] is False

@@ -154,15 +154,18 @@ def main(argv: list[str] | None = None) -> int:
         if args.required_native_pages is not None:
             if args.required_native_pages <= 0:
                 raise NativePageValidationError("--required-native-pages must be positive")
+            source_native = validate_native_page_count(args.source, args.required_native_pages)
             sample_native = validate_native_page_count(sample_output, args.required_native_pages)
             test_native = validate_native_page_count(test_output, args.required_native_pages)
             native_page_validation = {
+                "source.hwpx": asdict(source_native),
                 "roundtrip.sample.hwpx": asdict(sample_native),
                 "roundtrip.test.hwpx": asdict(test_native),
             }
-            if not sample_native.passed or not test_native.passed:
+            if not source_native.passed or not sample_native.passed or not test_native.passed:
                 raise NativePageValidationError(
                     "required native page validation did not pass: "
+                    f"source={source_native.reason or source_native.observed_pages}, "
                     f"sample={sample_native.reason or sample_native.observed_pages}, "
                     f"test={test_native.reason or test_native.observed_pages}",
                     native_page_validation,
