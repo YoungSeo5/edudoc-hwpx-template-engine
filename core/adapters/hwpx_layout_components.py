@@ -21,6 +21,10 @@ _SUPPORTED_COMPONENTS = frozenset(
 )
 _TABLE_COMPONENTS = frozenset({"header_info", "key_value_table", "status_table"})
 _BODY_COMPONENTS = frozenset({"section", "bullet_list", "callout", "footer_note"})
+#: family recipe가 소유하는 page invariant 키 — 실제 reference 5/5에서
+#: 공통으로 확인된 것만이다. 상/하 여백은 baseline이 `VARIABLE`로 판정했으므로
+#: 여기 없다(TemplateSpec 소유).
+_PAGE_INVARIANT_KEYS = ("paper_size", "orientation", "margin_left_mm", "margin_right_mm")
 
 
 class HwpxLayoutComponentError(RuntimeError):
@@ -29,7 +33,7 @@ class HwpxLayoutComponentError(RuntimeError):
 
 def expand_family_components(
     family: str, recipe_path: Path, components: object
-) -> tuple[list[dict[str, Any]], tuple[str, ...]]:
+) -> tuple[list[dict[str, Any]], tuple[str, ...], dict[str, Any]]:
     """Validate a family recipe and lower its generic components to sections."""
     recipe = _load_recipe(recipe_path, family)
     if not isinstance(components, list) or not components:
@@ -78,10 +82,7 @@ def expand_family_components(
             sections.append({**values, "type": "info_table"})
         elif component_type in _BODY_COMPONENTS:
             sections.append({**values, "type": "body_section"})
-    missing = [name for name in recipe["required_components"] if name not in component_types]
-    if missing:
-        raise HwpxLayoutComponentError(f"template_spec.components is missing required family component(s): {missing}")
-    return sections, tuple(component_types)
+    return sections, tuple(component_types), recipe["page"]
 
 
 def _expand_header_info(index: int, values: Mapping[str, Any]) -> list[dict[str, Any]]:
@@ -145,8 +146,40 @@ def _load_recipe(path: Path, family: str) -> dict[str, Any]:
         raise HwpxLayoutComponentError(f"cannot read family recipe {path}: {exc}") from exc
     if not isinstance(raw, dict) or raw.get("family") != family:
         raise HwpxLayoutComponentError(f"family recipe {path} does not declare family {family!r}")
-    defaults = raw.get("component_defaults", {})
-    required = raw.get("required_components", [])
-    if not isinstance(defaults, dict) or not isinstance(required, list):
-        raise HwpxLayoutComponentError("family recipe requires component_defaults and required_components")
-    return {"component_defaults": defaults, "required_components": required}
+    defaults = raw.get("component_defaults")
+    if not isinstance(defaults, dict):
+        raise HwpxLayoutComponentError("family recipe requires component_defaults")
+    return {"component_defaults": defaults, "page": _parse_recipe_page(path, raw.get("page"))}
+
+
+def _parse_recipe_page(path: Path, raw: Any) -> dict[str, Any]:
+    """Read the family's page invariants — the only page facts a family owns.
+
+    These are declared, not defaulted: a recipe that omits one is rejected
+    rather than silently falling back to whatever the hwpx library happens to
+    produce.
+    """
+    if not isinstance(raw, dict):
+        raise HwpxLayoutComponentError(f"family recipe {path} requires a 'page' object")
+    missing = [key for key in _PAGE_INVARIANT_KEYS if raw.get(key) is None]
+    if missing:
+        raise HwpxLayoutComponentError(
+            f"family recipe {path} page is missing required invariant(s): {missing}"
+        )
+    paper_size = raw["paper_size"]
+    orientation = raw["orientation"]
+    if not isinstance(paper_size, str) or not paper_size.strip():
+        raise HwpxLayoutComponentError("family recipe page.paper_size must be a non-empty string")
+    if orientation not in ("portrait", "landscape"):
+        raise HwpxLayoutComponentError(
+            f"family recipe page.orientation must be 'portrait' or 'landscape', got {orientation!r}"
+        )
+    page: dict[str, Any] = {"paper_size": paper_size, "orientation": orientation}
+    for key in ("margin_left_mm", "margin_right_mm"):
+        value = raw[key]
+        if isinstance(value, bool) or not isinstance(value, (int, float)) or value <= 0:
+            raise HwpxLayoutComponentError(
+                f"family recipe page.{key} must be a positive number, got {value!r}"
+            )
+        page[key] = float(value)
+    return page

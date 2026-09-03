@@ -325,10 +325,15 @@ def _parse_institution_masthead(value: Any) -> dict[str, Any]:
     default = value.get("default")
     if default not in ("required", "none"):
         raise HwpxAuthoringResolveError("masthead.default must be 'required' or 'none'")
+    override_allowed = value.get("document_override_allowed")
+    if not isinstance(override_allowed, bool):
+        raise HwpxAuthoringResolveError(
+            "masthead.document_override_allowed must be a boolean"
+        )
     if default != "required":
-        # default가 'none'이면 이번 문서는 masthead를 쓰지 않는다 — 나머지
+        # default가 'none'이면 이 기관은 masthead를 쓰지 않는다 — 나머지
         # masthead 속성(로고/치수 등)은 요구하지도, 읽지도 않는다.
-        return {"default": default}
+        return {"default": default, "document_override_allowed": override_allowed}
 
     missing = [key for key in _MASTHEAD_REQUIRED_WHEN_ACTIVE if value.get(key) is None]
     if missing:
@@ -339,6 +344,7 @@ def _parse_institution_masthead(value: Any) -> dict[str, Any]:
 
     parsed: dict[str, Any] = {
         "default": default,
+        "document_override_allowed": override_allowed,
         "width_mm": _parse_positive_number("masthead.width_mm", value["width_mm"]),
         "height_mm": _parse_positive_number("masthead.height_mm", value["height_mm"]),
         "border_width_mm": _parse_positive_number("masthead.border_width_mm", value["border_width_mm"]),
@@ -488,8 +494,11 @@ def resolve(
         _resolve_section(entry, styles, tables) for entry in spec.sections
     ]
     masthead = _resolve_masthead(design["masthead"], design["assets"], styles, spec)
+    page_invariants = _check_family_page_invariants(spec)
     return ResolvedAuthoringContract(
         page_margins_mm=spec.page_margins_mm,
+        paper_size=page_invariants.get("paper_size"),
+        orientation=page_invariants.get("orientation"),
         sections=tuple(resolved_sections),
         semantic_contract_id=(
             semantic_binding.contract.contract_id if semantic_binding is not None else None
@@ -502,14 +511,82 @@ def resolve(
     )
 
 
+#: family page invariant와 TemplateSpec 여백을 대조할 때 허용하는 오차(mm).
+#: 부동소수 반올림만 흡수하고 "대략 맞음"은 통과시키지 않는다.
+_PAGE_MARGIN_TOLERANCE_MM = 0.01
+
+
+def _check_family_page_invariants(spec: TemplateSpec) -> Mapping[str, Any]:
+    """Fail closed when a TemplateSpec violates its family's page invariants.
+
+    Only left/right margins are checked against the family. Top/bottom margins
+    are deliberately not checked: the baseline records them as ``VARIABLE``
+    across the reference documents, so they are the TemplateSpec's decision.
+
+    A spec with no ``document_family`` has no invariants to check and is
+    returned unchanged — the legacy ``sections`` path is untouched.
+    """
+    invariants = spec.family_page_invariants
+    if not invariants:
+        return {}
+    for margin_key, invariant_key in (
+        ("left", "margin_left_mm"),
+        ("right", "margin_right_mm"),
+    ):
+        expected = invariants[invariant_key]
+        actual = spec.page_margins_mm[margin_key]
+        if abs(float(actual) - float(expected)) > _PAGE_MARGIN_TOLERANCE_MM:
+            raise HwpxAuthoringResolveError(
+                f"template_spec.page.margins_mm.{margin_key} must be {expected}mm for "
+                f"document_family {spec.document_family!r} (family page invariant), "
+                f"got {actual}mm"
+            )
+    return invariants
+
+
 def _resolve_masthead(
     design_masthead: Mapping[str, Any],
     assets: Mapping[str, Path],
     styles: Mapping[str, Mapping[str, Any]],
     spec: TemplateSpec,
 ) -> ResolvedMasthead | None:
-    if design_masthead.get("default") != "required":
+    """Decide masthead presence from institution policy plus a permitted
+    document override.
+
+    Masthead presence is an institution decision that a document may override
+    only when the Institution Design Contract says so — it is not a
+    document-family invariant, so no family recipe forces it either way. The
+    three cases:
+
+    - TemplateSpec declares nothing -> institution ``masthead.default`` wins.
+    - TemplateSpec declares and ``document_override_allowed`` is true -> the
+      document's choice wins.
+    - TemplateSpec declares and ``document_override_allowed`` is false -> this
+      raises. The override fails closed; it is never silently ignored,
+      because ignoring it would author a document that contradicts its own
+      declared layout plan.
+    """
+    institution_default = design_masthead.get("default") == "required"
+    if spec.masthead_use is None:
+        use_masthead = institution_default
+    elif design_masthead.get("document_override_allowed") is True:
+        use_masthead = spec.masthead_use
+    else:
+        raise HwpxAuthoringResolveError(
+            "template_spec declares masthead.use but this institution design "
+            "sets masthead.document_override_allowed=false — the document may "
+            "not override institution masthead policy"
+        )
+    if not use_masthead:
         return None
+    if not institution_default:
+        # 문서가 masthead를 켰지만 기관 설계가 'none'이라 로고/치수/스타일을
+        # 하나도 선언하지 않았다 — 없는 값을 지어내지 않고 명시적으로 거부한다.
+        raise HwpxAuthoringResolveError(
+            "template_spec requests a masthead but this institution design "
+            "sets masthead.default='none' and declares no masthead "
+            "logo/dimension/style properties"
+        )
     title_section = next(
         (entry for entry in spec.sections if isinstance(entry, TitleSection)), None
     )

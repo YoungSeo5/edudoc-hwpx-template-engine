@@ -2,15 +2,36 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "document-family-layout.schema.json",
   "title": "Document Family Layout Recipe v1",
+  "description": "Product policy, not a reference observation. A family recipe owns only what is true for every document of the family regardless of institution and regardless of document: page invariants, the native page count, and component-to-style-role bindings. It never declares a required document composition — which components a document uses, in what order, and whether it uses any of them is owned by the document's TemplateSpec.",
   "type": "object",
   "additionalProperties": false,
-  "required": ["family", "recipe_version", "required_components", "component_defaults"],
+  "required": ["family", "recipe_version", "native_page_count", "page", "component_defaults"],
   "properties": {
     "family": { "const": "one_page_report" },
     "recipe_version": { "const": "v1" },
-    "native_page_count": { "type": "integer", "minimum": 1 },
-    "required_components": { "type": "array", "items": { "$ref": "#/$defs/component" } },
-    "component_defaults": { "type": "object", "additionalProperties": { "type": "object" } }
+    "native_page_count": {
+      "description": "Required: DOCUMENT_RENDER reads this from the approved package's recipe snapshot to enforce the family's native page contract, so it may not be optional.",
+      "type": "integer",
+      "minimum": 1
+    },
+    "page": {
+      "description": "Family-wide page invariants, enforced by resolve(). Top/bottom margins are deliberately absent: the layout baseline records them as VARIABLE across the reference documents, so they are a TemplateSpec decision.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["paper_size", "orientation", "margin_left_mm", "margin_right_mm"],
+      "properties": {
+        "paper_size": { "type": "string", "minLength": 1 },
+        "orientation": { "enum": ["portrait", "landscape"] },
+        "margin_left_mm": { "type": "number", "exclusiveMinimum": 0 },
+        "margin_right_mm": { "type": "number", "exclusiveMinimum": 0 }
+      }
+    },
+    "component_defaults": {
+      "description": "component type -> Institution Design style/table role binding. This is NOT a family composition and NOT a required-component list: a key here only states which style role a component uses when a TemplateSpec does not override it. A TemplateSpec may use none, some, or all of these components in any order.",
+      "type": "object",
+      "propertyNames": { "$ref": "#/$defs/component" },
+      "additionalProperties": { "type": "object" }
+    }
   },
   "$defs": {
     "component": {

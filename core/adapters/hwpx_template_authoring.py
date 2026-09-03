@@ -63,6 +63,7 @@ from .hwpx_layout_components import HwpxLayoutComponentError, expand_family_comp
 # 1 inch = 7200 HWPUNIT = 25.4mm. core/templates/extractors/style.py가 읽기
 # 방향으로 쓰는 것과 같은 변환식을 저작(쓰기) 방향에 쓴다.
 _HWPUNIT_PER_MM = 7200 / 25.4
+_HANCOM_REFERENCE_PORTRAIT_TOKEN = "WIDELY"
 
 _VALID_ALIGNS = ("left", "center")
 _MARGIN_KEYS = ("left", "right", "top", "bottom", "header", "footer")
@@ -232,6 +233,15 @@ class TemplateSpec:
     document_family: str = ""
     family_recipe_path: str = ""
     component_types: tuple[str, ...] = ()
+    #: 이 문서가 masthead를 쓸지에 대한 **문서 자신의 선언**. ``None``은
+    #: "선언하지 않음"이며 이때는 Institution Design Contract의
+    #: ``masthead.default``가 그대로 적용된다. ``True``/``False``는
+    #: ``masthead.document_override_allowed``가 true일 때만 유효하고,
+    #: 아니면 resolve()가 거부한다.
+    masthead_use: bool | None = None
+    #: family recipe가 선언한 page invariant(용지/방향/좌우 여백). family가
+    #: 없는 legacy spec은 비어 있다.
+    family_page_invariants: Mapping[str, Any] = field(default_factory=dict)
 
 
 def load_template_spec(path: Path | str) -> TemplateSpec:
@@ -254,13 +264,14 @@ def load_template_spec(path: Path | str) -> TemplateSpec:
     document_family = _optional_top_level_str(data, "document_family")
     component_types: tuple[str, ...] = ()
     family_recipe_path = ""
+    family_page_invariants: dict[str, Any] = {}
     if document_family:
         recipe_value = _optional_top_level_str(data, "family_recipe")
         recipe_path = Path(recipe_value)
         if not recipe_path.is_absolute():
             recipe_path = source.parent / recipe_path
         try:
-            raw_sections, component_types = expand_family_components(
+            raw_sections, component_types, family_page_invariants = expand_family_components(
                 document_family, recipe_path, data.get("components")
             )
         except HwpxLayoutComponentError as exc:
@@ -280,7 +291,32 @@ def load_template_spec(path: Path | str) -> TemplateSpec:
         document_family=document_family,
         family_recipe_path=family_recipe_path,
         component_types=component_types,
+        masthead_use=_parse_spec_masthead(data.get("masthead")),
+        family_page_invariants=family_page_invariants,
     )
+
+
+def _parse_spec_masthead(raw: Any) -> bool | None:
+    """Read the document's own masthead declaration.
+
+    Absent means "not declared" (institution default applies) — it is not the
+    same as ``{"use": false}``. Whether a declaration is *permitted* is the
+    Institution Design Contract's call and is checked in ``resolve()``, not
+    here; this function only parses.
+    """
+    if raw is None:
+        return None
+    if not isinstance(raw, dict):
+        raise HwpxTemplateAuthoringError("template_spec.masthead must be an object")
+    unknown = sorted(set(raw) - {"use"})
+    if unknown:
+        raise HwpxTemplateAuthoringError(
+            f"template_spec.masthead has unknown key(s): {unknown}"
+        )
+    use = raw.get("use")
+    if not isinstance(use, bool):
+        raise HwpxTemplateAuthoringError("template_spec.masthead.use must be a boolean")
+    return use
 
 
 def _optional_top_level_str(data: Mapping[str, Any], key: str) -> str:
@@ -309,9 +345,15 @@ def _parse_page(raw: Any) -> dict[str, float]:
     for key, value in margins_raw.items():
         if key not in _MARGIN_KEYS:
             raise HwpxTemplateAuthoringError(f"template_spec.page.margins_mm has unknown key: {key!r}")
-        if not isinstance(value, (int, float)) or isinstance(value, bool) or value <= 0:
+        if (
+            not isinstance(value, (int, float))
+            or isinstance(value, bool)
+            or value < 0
+            or (key not in {"header", "footer"} and value == 0)
+        ):
             raise HwpxTemplateAuthoringError(
-                f"template_spec.page.margins_mm.{key} must be a positive number"
+                f"template_spec.page.margins_mm.{key} must be "
+                f"{'non-negative' if key in {'header', 'footer'} else 'positive'} number"
             )
         margins[key] = float(value)
     return margins
@@ -916,6 +958,10 @@ class ResolvedAuthoringContract:
     institution_design_id: str | None = None
     semantic_placements: tuple[Mapping[str, str], ...] = ()
     masthead: ResolvedMasthead | None = None
+    #: family recipe가 선언한 용지/방향. ``None``이면 family가 없는 legacy
+    #: spec이라 이 authoring 버전이 용지를 명시하지 않는다(기존 동작 유지).
+    paper_size: str | None = None
+    orientation: str | None = None
 
 
 def run_skill_subprocess(cmd: list[str]) -> subprocess.CompletedProcess[str]:
@@ -959,7 +1005,18 @@ def generate_source_hwpx(resolved: ResolvedAuthoringContract, output_path: Path 
     try:
         doc = HwpxDocument.new()
         section = doc.sections[0]
-        doc.page.setup(margins_mm=dict(resolved.page_margins_mm), section=section)
+        # 용지/방향은 family recipe가 소유한 invariant다 — 라이브러리
+        # skeleton이 우연히 A4 세로를 만들어 주는 것에 기대지 않고 명시적으로
+        # 전달한다. family가 없는 legacy spec은 선언할 값이 없으므로 기존처럼
+        # 여백만 설정한다.
+        page_setup: dict[str, Any] = {"margins_mm": dict(resolved.page_margins_mm)}
+        if resolved.paper_size is not None:
+            page_setup["paper_size"] = resolved.paper_size
+        if resolved.orientation is not None:
+            page_setup["orientation"] = resolved.orientation
+        doc.page.setup(section=section, **page_setup)
+        if resolved.orientation == "portrait":
+            section.properties.set_page_size(orientation=_HANCOM_REFERENCE_PORTRAIT_TOKEN)
 
         # HwpxDocument.new()의 section에는 빈 skeleton 문단이 하나 이미 있다
         # (HWPX가 섹션을 비워 두는 것을 허용하지 않기 때문, 그리고 방금 적용한

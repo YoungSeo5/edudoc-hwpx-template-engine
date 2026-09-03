@@ -39,6 +39,7 @@ import json
 import sys
 import xml.etree.ElementTree as ET
 import zipfile
+from dataclasses import replace
 from pathlib import Path
 
 import pytest
@@ -76,6 +77,8 @@ FIXTURE = (
 INSTITUTION_DESIGN_FIXTURE = (
     ROOT / "tests" / "fixtures" / "template-contracts" / "edudoc.institution_design.json"
 )
+CANONICAL_WEEKLY_SPEC = ROOT / "tests" / "fixtures" / "template-spec" / "weekly_report_one_page.template_spec.json"
+CANONICAL_EDUDOC_DESIGN = ROOT / "templates" / "institutions" / "edudoc" / "_design" / "design.json"
 
 _NS = {
     "hh": "http://www.hancom.co.kr/hwpml/2011/head",
@@ -586,6 +589,42 @@ def test_generate_source_hwpx_applies_institution_color_not_skeleton_default(
     assert font_face.get("face") == "함초롬돋움"
     bold = char_pr.find(f"{{{_NS['hh']}}}bold")
     assert bold is not None  # institution role의 bold: true가 적용됨
+
+
+@pytest.mark.parametrize(
+    ("orientation", "expected_token"),
+    [("portrait", "WIDELY"), ("landscape", "WIDELY")],
+)
+def test_generate_source_hwpx_serializes_hancom_page_orientation_tokens(
+    tmp_path: Path, orientation: str, expected_token: str
+) -> None:
+    resolved = replace(_resolved_from_fixture(tmp_path), orientation=orientation)
+    _, section_root = _read_source_xml(
+        generate_source_hwpx(resolved, tmp_path / f"{orientation}.hwpx")
+    )
+
+    page_pr = section_root.find(f".//{{{_NS['hp']}}}pagePr")
+
+    assert page_pr is not None
+    assert page_pr.get("landscape") == expected_token
+    assert page_pr.get("landscape") not in {"PORTRAIT", "LANDSCAPE"}
+
+
+def test_generate_source_hwpx_keeps_canonical_one_page_report_a4_portrait(
+    tmp_path: Path,
+) -> None:
+    resolved = resolve(CANONICAL_EDUDOC_DESIGN, load_template_spec(CANONICAL_WEEKLY_SPEC))
+    _, section_root = _read_source_xml(
+        generate_source_hwpx(resolved, tmp_path / "weekly-report.hwpx")
+    )
+
+    page_pr = section_root.find(f".//{{{_NS['hp']}}}pagePr")
+
+    assert page_pr is not None
+    assert page_pr.get("landscape") == "WIDELY"
+    assert page_pr.get("landscape") not in {"PORTRAIT", "LANDSCAPE"}
+    assert page_pr.get("width") == "59528"
+    assert page_pr.get("height") == "84189"
 
 
 def test_generate_source_hwpx_applies_info_table_label_and_value_typography(

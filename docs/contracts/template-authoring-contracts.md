@@ -61,8 +61,8 @@ another contract or from the existing implementation.
 
 - Institution Design owns the base typography and paragraph geometry of a
   style role.
-- A Family Recipe owns required component structure and component-to-style-role
-  mapping.
+- A Family Recipe owns page invariants and component-to-style-role mapping;
+  TemplateSpec owns whether, how many, and in what order components appear.
 - A TemplateSpec owns document structure, field bindings, document-specific
   markers, and hierarchy-depth-specific geometry.
 - The resolver performs lookup, permitted merges, and validation.
