@@ -15,7 +15,7 @@ RECIPE = ROOT / "templates" / "institutions" / "edudoc" / "_families" / "one_pag
 
 
 def test_row_groups_materialize_each_declared_group() -> None:
-    sections, _ = expand_family_components(
+    sections, _, _ = expand_family_components(
         "one_page_report",
         RECIPE,
         [
