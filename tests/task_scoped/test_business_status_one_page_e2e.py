@@ -66,6 +66,7 @@ def test_business_status_candidate_renders_sparse_normal_dense_without_state_lea
             "--institution", "edudoc",
             "--document-type", "사업 추진현황 1페이지 보고서",
             "--output-dir", str(candidate),
+            "--allow-noncanonical-inputs-for-test",
             "--candidate-id", candidate_id,
             "--template-id", "edudoc-business-status-one-page-v1",
         ]

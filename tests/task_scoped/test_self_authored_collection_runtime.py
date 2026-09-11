@@ -37,6 +37,7 @@ def self_authored_candidate(tmp_path_factory: pytest.TempPathFactory) -> Path:
             "--institution", "edudoc",
             "--document-type", "주간업무보고서",
             "--output-dir", str(candidate),
+            "--allow-noncanonical-inputs-for-test",
             "--candidate-id", candidate_id,
             "--template-id", f"tpl_{uuid.uuid4().hex}",
         ]

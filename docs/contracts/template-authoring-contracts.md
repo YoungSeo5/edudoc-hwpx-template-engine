@@ -18,10 +18,10 @@ the following artifact.
 
 | Artifact | Authoritative responsibility | Canonical location | Current runtime status |
 |---|---|---|---|
-| TemplateRequest | Preserve the user's stated purpose, items, fixed text, reference scope, and constraints | `sandbox/template-candidates/<candidate_id>/template_request.json` until approval; copied into approved package | Not implemented |
-| Semantic Template Contract | Agent decision: canonical content fields, fixed elements, requiredness, cardinality, and content type | `sandbox/template-candidates/<candidate_id>/semantic_contract.json` until approval; copied into approved package | Not implemented |
+| TemplateRequest | Preserve the user's stated purpose, items, fixed text, reference scope, and constraints | production source: `templates/self-authored/<institution>/<document_type>/template_request.json`; candidate snapshot until approval | Not implemented |
+| Semantic Template Contract | Agent decision: canonical content fields, fixed elements, requiredness, cardinality, and content type | production source: `templates/self-authored/<institution>/<document_type>/semantic_contract.json`; candidate snapshot until approval | Not implemented |
 | Institution Design Contract | Institution policy/defaults for self-authored documents, distinct from observations | `templates/institutions/<institution>/_design/design.json` | Not implemented |
-| executable TemplateSpec | Concrete ordered layout and provenance references, consumed by authoring | candidate `template_spec.json`; copied into approved package | Current parser supports only its `sections[]`, `page`, and `styles` subset |
+| executable TemplateSpec | Concrete ordered layout and provenance references, consumed by authoring | production source: `templates/self-authored/<institution>/<document_type>/template_spec.json`; candidate snapshot until approval | Current parser supports only its `sections[]`, `page`, and `styles` subset |
 | canonical content | Per-job `template_id` plus canonical `field_id -> value` map | caller-owned `content.json` / prepared in memory | Existing renderer input; requiredness is not yet enforced from semantic contract |
 
 The candidate root is always under `sandbox/template-candidates/`; candidate
@@ -43,6 +43,34 @@ and `_audit/<new_template_id>` is added for the replacement.
 
 `templates/institutions/` is a protected data submodule. This repository
 defines that layout but does not create or edit its institution data.
+
+### Production self-authoring input selection
+
+A production self-authored candidate is one written directly under
+`sandbox/template-candidates/<candidate_id>/`. It accepts exactly these
+authoritative inputs for its `(institution, document_type)`:
+
+```text
+templates/self-authored/<institution>/<document_type>/template_request.json
+templates/self-authored/<institution>/<document_type>/semantic_contract.json
+templates/self-authored/<institution>/<document_type>/template_spec.json
+templates/institutions/<institution>/_design/design.json
+```
+
+The `TemplateSpec` explicitly names its family recipe; the TemplateRequest
+explicitly states any reference scope/prototype. There is no latest/recent
+candidate lookup, no generated-HWPX-as-next-generation input, and no fallback
+from any missing canonical input to another source. The authoring CLI enforces
+canonical paths regardless of its output directory. A non-canonical
+test/development invocation must explicitly pass
+`--allow-noncanonical-inputs-for-test`; that opt-in is rejected when the output
+would be a production candidate under `sandbox/template-candidates/`.
+
+The following are never production self-authoring inputs: `sandbox/template-
+candidates/**`, QA/roundtrip output, an experimental candidate, or any
+test-only fixture. A candidate records `authoring_input.provenance.json` with
+the source path, SHA-256, and identity of the request, semantic contract,
+TemplateSpec, Institution Design, and explicit family/reference inputs.
 
 ## Interpretation rules
 
@@ -147,9 +175,10 @@ existing layout data:
 }
 ```
 
-Those references do not duplicate field meaning or institution defaults. The
-current parser does not validate or persist them, so they are a defined runtime
-gap, not a supported behavior.
+Those references do not duplicate field meaning or institution defaults.
+Self-authored authoring validates them against the supplied semantic contract
+and Institution Design, and persists the selected input identities and digests
+in `authoring_input.provenance.json`.
 
 ## Canonical content and aliases
 

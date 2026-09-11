@@ -49,6 +49,7 @@ def test_hierarchy_projection_uses_children_after_the_section_heading(
             "--institution", "edudoc",
             "--document-type", "사업 추진현황 1페이지 보고서",
             "--output-dir", str(candidate),
+            "--allow-noncanonical-inputs-for-test",
             "--candidate-id", candidate_id,
             "--template-id", f"tpl_{uuid.uuid4().hex}",
         ]

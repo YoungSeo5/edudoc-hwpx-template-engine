@@ -215,10 +215,16 @@ def persist_candidate_contract_artifacts(staging_dir: Path | str, candidate_dir:
     validate_candidate_field_identity(semantic, candidate)
     for name in required:
         shutil.copy2(staging / name, candidate / name)
+    provenance = staging / "authoring_input.provenance.json"
+    if provenance.is_file():
+        shutil.copy2(provenance, candidate / provenance.name)
     family_recipe = staging / "family_recipe.json"
     if family_recipe.is_file():
         shutil.copy2(family_recipe, candidate / family_recipe.name)
-    return {name.removesuffix(".json"): str(candidate / name) for name in required}
+    artifacts = {name.removesuffix(".json"): str(candidate / name) for name in required}
+    if provenance.is_file():
+        artifacts[provenance.name.removesuffix(".json")] = str(candidate / provenance.name)
+    return artifacts
 
 
 def _required_string(raw: dict[str, Any], key: str) -> str:

@@ -30,6 +30,7 @@ def test_authoring_cli_persists_a_semantic_candidate_bundle(
             "--institution", "edudoc",
             "--document-type", "주간업무보고서",
             "--output-dir", str(candidate),
+            "--allow-noncanonical-inputs-for-test",
             "--candidate-id", candidate_id,
             "--template-id", f"tpl_{uuid.uuid4().hex}",
         ]
@@ -112,6 +113,8 @@ def test_semantic_role_binding_rejects_a_content_placement_redeclared_as_fixed(
             "--template-spec", str(SPEC),
             "--institution", "edudoc",
             "--document-type", "주간업무보고서",
+            "--output-dir", str(tmp_path / "invalid-semantic-candidate"),
+            "--allow-noncanonical-inputs-for-test",
             "--candidate-id", f"cand_invalid_{uuid.uuid4().hex}",
         ]
     )
@@ -139,6 +142,8 @@ def test_authoring_cli_rejects_mismatched_template_request_id(
             "--template-spec", str(SPEC),
             "--institution", "edudoc",
             "--document-type", "주간업무보고서",
+            "--output-dir", str(tmp_path / "invalid-request-candidate"),
+            "--allow-noncanonical-inputs-for-test",
             "--candidate-id", f"cand_request_mismatch_{uuid.uuid4().hex}",
         ]
     )

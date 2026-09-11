@@ -85,12 +85,18 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--institution", required=True, help="기관명")
     parser.add_argument("--document-type", required=True, help="문서 유형")
     parser.add_argument("--template-id", help="템플릿 식별자(생략하면 자동 생성)")
+    parser.add_argument(
+        "--allow-noncanonical-inputs-for-test",
+        action="store_true",
+        help="테스트/개발 전용: canonical self-authored input 검사를 명시적으로 해제",
+    )
     args = parser.parse_args(argv)
 
     candidate_id = args.candidate_id or f"cand_{uuid.uuid4().hex}"
     candidate_dir = args.output_dir or (ROOT / "sandbox" / "template-candidates" / candidate_id)
     authoring_dir = candidate_dir.parent / f"{candidate_dir.name}.authoring"
     try:
+        _validate_production_inputs(args, candidate_dir)
         template_request = _load_contract(args.template_request, "TemplateRequest")
         semantic_raw = _load_contract(args.semantic_contract, "Semantic Contract")
         institution_design = _load_contract(args.institution_design, "Institution Design Contract")
@@ -117,7 +123,14 @@ def main(argv: list[str] | None = None) -> int:
         )
         rules = build_separation_rules(resolved, source_hwpx)
         rules_path = write_separation_rules(rules, authoring_dir / "rules.json")
-        _stage_contract_artifacts(args, semantic.contract_id, resolved, rules_path, authoring_dir)
+        _stage_contract_artifacts(
+            args,
+            template_request,
+            semantic.contract_id,
+            resolved,
+            rules_path,
+            authoring_dir
+        )
     except (
         OSError,
         ValueError,
@@ -190,6 +203,7 @@ def main(argv: list[str] | None = None) -> int:
 
 def _stage_contract_artifacts(
     args: argparse.Namespace,
+    template_request: dict[str, object],
     semantic_contract_id: str,
     resolved: object,
     rules_path: Path,
@@ -200,6 +214,7 @@ def _stage_contract_artifacts(
     shutil.copy2(args.template_request, contracts / "template_request.json")
     shutil.copy2(args.semantic_contract, contracts / "semantic_contract.json")
     template_spec_payload = _load_contract(args.template_spec, "template_spec")
+    recipe_path: Path | None = None
     recipe_value = template_spec_payload.get("family_recipe")
     if isinstance(recipe_value, str) and recipe_value:
         recipe_path = Path(recipe_value)
@@ -227,7 +242,73 @@ def _stage_contract_artifacts(
         + "\n",
         encoding="utf-8",
     )
+    (contracts / "authoring_input.provenance.json").write_text(
+        json.dumps(
+            _authoring_input_provenance(args, template_request, semantic_contract_id, recipe_path),
+            ensure_ascii=False,
+            indent=2,
+        )
+        + "\n",
+        encoding="utf-8",
+    )
     write_resolved_authoring_contract(resolved, contracts / "resolved_authoring_contract.json")
+
+
+def _validate_production_inputs(args: argparse.Namespace, candidate_dir: Path) -> None:
+    candidate_root = (ROOT / "sandbox" / "template-candidates").resolve()
+    if getattr(args, "allow_noncanonical_inputs_for_test", False):
+        if candidate_dir.resolve().is_relative_to(candidate_root):
+            raise ValueError(
+                "--allow-noncanonical-inputs-for-test cannot create a production candidate"
+            )
+        return
+    canonical_root = ROOT / "templates" / "self-authored" / args.institution / args.document_type
+    expected = {
+        "template_request": canonical_root / "template_request.json",
+        "semantic_contract": canonical_root / "semantic_contract.json",
+        "template_spec": canonical_root / "template_spec.json",
+        "institution_design": ROOT / "templates" / "institutions" / args.institution / "_design" / "design.json",
+    }
+    supplied = {
+        "template_request": args.template_request,
+        "semantic_contract": args.semantic_contract,
+        "template_spec": args.template_spec,
+        "institution_design": args.institution_design,
+    }
+    invalid = [name for name, path in supplied.items() if path.resolve() != expected[name].resolve()]
+    if invalid:
+        raise ValueError(
+            "canonical self-authored input required for production candidate: "
+            + ", ".join(invalid)
+        )
+
+
+def _authoring_input_provenance(
+    args: argparse.Namespace,
+    template_request: dict[str, object],
+    semantic_contract_id: str,
+    recipe_path: Path | None,
+) -> dict[str, object]:
+    reference_scope = template_request["reference_scope"]
+    if not isinstance(reference_scope, dict):
+        raise ValueError("TemplateRequest.reference_scope must be an object")
+    return {
+        "template_request": _input_digest(args.template_request, "request_id", template_request),
+        "semantic_contract": _input_digest(args.semantic_contract, "contract_id", {"contract_id": semantic_contract_id}),
+        "template_spec": _input_digest(args.template_spec, "template_spec_version", _load_contract(args.template_spec, "template_spec")),
+        "institution_design": _input_digest(args.institution_design, "design_id", _load_contract(args.institution_design, "Institution Design Contract")),
+        "family_recipe": _input_digest(recipe_path, "family", _load_contract(recipe_path, "family recipe")) if recipe_path else None,
+        "reference_scope": reference_scope,
+    }
+
+
+def _input_digest(path: Path, identity_key: str, payload: dict[str, object]) -> dict[str, str]:
+    identity = _required_contract_value(payload, path.name, identity_key)
+    return {
+        "path": str(path),
+        "sha256": hashlib.sha256(path.read_bytes()).hexdigest(),
+        identity_key: identity,
+    }
 
 
 def _required_native_pages(spec: TemplateSpec) -> int | None:

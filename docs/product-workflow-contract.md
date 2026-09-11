@@ -31,11 +31,11 @@ Observed reference-layout evidence remains in
 
 | Artifact | Authoritative contents | Created by | Consumer | Canonical location |
 |---|---|---|---|---|
-| `TemplateRequest` | stated purpose, requested items, fixed text, reference scope, constraints | person/request layer | agent | candidate then audit |
-| Semantic Template Contract | canonical fields, roles, requiredness, cardinality, types | agent | planner, mapping, validator | candidate then approved runtime when present |
+| `TemplateRequest` | stated purpose, requested items, fixed text, reference scope, constraints | person/request layer | agent | production source: `templates/self-authored/<institution>/<document_type>/`; then candidate/audit snapshot |
+| Semantic Template Contract | canonical fields, roles, requiredness, cardinality, types | agent | planner, mapping, validator | production source: `templates/self-authored/<institution>/<document_type>/`; then candidate/approved runtime snapshot |
 | layout baseline | observed evidence | reference analysis | person/agent | `docs/hwpx-layout-baseline.md` |
 | Institution Design Contract | institution defaults, masthead policy, asset refs | institution/product policy | authoring planner | `templates/institutions/<institution>/_design/design.json` |
-| executable `TemplateSpec` | concrete ordered document layout and provenance references | authoring planner | HWPX author, page-count validator | candidate then approved runtime when present |
+| executable `TemplateSpec` | concrete ordered document layout and provenance references | authoring planner | HWPX author, page-count validator | production source: `templates/self-authored/<institution>/<document_type>/`; then candidate/approved runtime snapshot |
 | candidate | review HWPX, contracts, QA evidence | code | QA/human | `sandbox/template-candidates/<candidate_id>/` |
 | audit | QA, human review, authoring provenance, and non-runtime candidate evidence | approval process | audit/review | `<registry_root>/_audit/<template_id>/` |
 | approved package | final-renderable runtime artifacts only | approval process | registry/renderer | `templates/institutions/<institution>/<document_type>/` |
@@ -137,6 +137,14 @@ Storage-boundary implementation: [approved runtime / audit separation](tasks/app
 candidate -- machine QA --> reviewed candidate
 reviewed candidate -- visual approval + gate --> approved
 ```
+
+For a production self-authored candidate, code accepts only the canonical
+request, semantic contract, TemplateSpec, and Institution Design paths defined
+in [Template authoring contracts](contracts/template-authoring-contracts.md).
+Sandbox candidates, test fixtures, experimental artifacts, QA output, and
+roundtrip HWPX are not selectable inputs or fallbacks. Candidate metadata
+records the selected input paths, identities, digests, and explicit reference
+scope; it does not infer a reference from a previous candidate.
 
 Candidates exist only under `sandbox/template-candidates/<candidate_id>/` and
 are never registry-visible. An approved package is stored only at
