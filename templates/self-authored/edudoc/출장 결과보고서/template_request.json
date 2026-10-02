@@ -1,0 +1,24 @@
+{
+  "template_request_version": "v1",
+  "request_id": "business-trip-result-report-request-v1",
+  "institution": "edudoc",
+  "document_type": "출장 결과보고서",
+  "purpose": "출장의 개요, 주요 일정, 결과와 성과를 한 페이지로 보고한다.",
+  "requested_items": [
+    {"request_item_id": "traveler", "description": "출장자", "must_include": true},
+    {"request_item_id": "department", "description": "소속", "must_include": true},
+    {"request_item_id": "trip_period", "description": "출장 기간", "must_include": true},
+    {"request_item_id": "destination", "description": "출장지", "must_include": true},
+    {"request_item_id": "written_on", "description": "작성일", "must_include": true},
+    {"request_item_id": "audience", "description": "보고 대상", "must_include": true},
+    {"request_item_id": "trip_purpose", "description": "출장 목적", "must_include": true},
+    {"request_item_id": "expense_total", "description": "경비 합계", "must_include": true},
+    {"request_item_id": "schedule", "description": "주요 일정표(일자·방문처·주요 활동)", "must_include": true},
+    {"request_item_id": "trip_results", "description": "출장 결과(주요 내용)", "must_include": true},
+    {"request_item_id": "outcomes", "description": "성과 및 시사점", "must_include": true}
+  ],
+  "fixed_text": ["출장 결과보고서"],
+  "design_requirements": [],
+  "reference_scope": {"mode": "institution_baseline_only"},
+  "constraints": ["A4 한 페이지"]
+}

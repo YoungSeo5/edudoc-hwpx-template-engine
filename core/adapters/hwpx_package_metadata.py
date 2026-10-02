@@ -7,7 +7,7 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from .hwpx_template_input import ResolvedMetadata
 
-FSS_META_NAMES = (
+PACKAGE_META_NAMES = (
     "creator",
     "subject",
     "description",
@@ -20,7 +20,7 @@ FSS_META_NAMES = (
 
 
 @dataclass(frozen=True, slots=True)
-class FssPackageMetadata:
+class PackageMetadata:
     title: str
     creator: str
     subject: str
@@ -31,13 +31,13 @@ class FssPackageMetadata:
     requested_at: datetime
 
 
-def build_fss_package_metadata(
+def build_package_metadata(
     metadata: ResolvedMetadata,
     *,
     requester_name: str,
     requested_at: datetime,
-) -> FssPackageMetadata:
-    return FssPackageMetadata(
+) -> PackageMetadata:
+    return PackageMetadata(
         title=metadata.title,
         creator=requester_name,
         subject=metadata.subject,

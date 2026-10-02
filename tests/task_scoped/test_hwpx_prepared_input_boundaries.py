@@ -83,6 +83,7 @@ def test_fill_template_sections_keeps_render_error_contract(
 
 def test_approved_template_cli_renders_after_boundary_refactor(
     tmp_path: Path,
+    sandbox_render_registry: Path,
 ) -> None:
     content_path = tmp_path / "content.json"
     content_path.write_text(
@@ -115,6 +116,7 @@ def test_approved_template_cli_renders_after_boundary_refactor(
 def test_approved_template_cli_rejects_candidate(
     tmp_path: Path,
     capsys: pytest.CaptureFixture[str],
+    sandbox_render_registry: Path,
 ) -> None:
     # Given: content belongs to a template that has not been approved.
     output = tmp_path / "candidate.hwpx"
@@ -146,6 +148,7 @@ def test_approved_template_cli_rejects_candidate(
 def test_approved_template_cli_rejects_content_template_id_mismatch(
     tmp_path: Path,
     capsys: pytest.CaptureFixture[str],
+    sandbox_render_registry: Path,
 ) -> None:
     # Given: an approved template is paired with content for another template ID.
     content = json.loads(

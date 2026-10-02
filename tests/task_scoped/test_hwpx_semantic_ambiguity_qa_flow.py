@@ -77,7 +77,7 @@ def test_fixed_resolution_preserves_original_text_node_verbatim(tmp_path: Path) 
 
     with pytest.raises(SemanticAmbiguityError) as excinfo:
         separate_hwpx_template_content(
-            source, output, template_id="fixed_resolved", institution="demo"
+            source, output, template_id="fixed_resolved", institution="demo", temporary_root=tmp_path / "_tmp"
         )
     (unresolved_entry,) = excinfo.value.resolution_skeleton
 
@@ -105,6 +105,7 @@ def test_fixed_resolution_preserves_original_text_node_verbatim(tmp_path: Path) 
         template_id="fixed_resolved",
         institution="demo",
         rules_path=rules_path,
+        temporary_root=tmp_path / "_tmp",
     )
 
     mapping = json.loads(result.placeholder_map.read_text(encoding="utf-8"))
@@ -137,7 +138,7 @@ def test_placeholder_map_fields_match_content_semantic_decisions_one_to_one(
 
     with pytest.raises(SemanticAmbiguityError) as excinfo:
         separate_hwpx_template_content(
-            source, output, template_id="fixed_ratio", institution="demo"
+            source, output, template_id="fixed_ratio", institution="demo", temporary_root=tmp_path / "_tmp"
         )
     (unresolved_entry,) = excinfo.value.resolution_skeleton
 
@@ -185,6 +186,7 @@ def test_placeholder_map_fields_match_content_semantic_decisions_one_to_one(
         template_id="fixed_ratio",
         institution="demo",
         rules_path=rules_path,
+        temporary_root=tmp_path / "_tmp",
     )
     separation_rules = load_separation_rules(rules_path)
 
@@ -311,7 +313,7 @@ def test_marker_content_resolution_projects_placeholder_inside_table_cell(
 
     with pytest.raises(SemanticAmbiguityError) as excinfo:
         separate_hwpx_template_content(
-            source, output, template_id="table_marker_resolved", institution="demo"
+            source, output, template_id="table_marker_resolved", institution="demo", temporary_root=tmp_path / "_tmp"
         )
     (unresolved_entry,) = excinfo.value.resolution_skeleton
     span = unresolved_entry["decision"]["span"]
@@ -342,6 +344,7 @@ def test_marker_content_resolution_projects_placeholder_inside_table_cell(
         template_id="table_marker_resolved",
         institution="demo",
         rules_path=rules_path,
+        temporary_root=tmp_path / "_tmp",
     )
 
     mapping = json.loads(result.placeholder_map.read_text(encoding="utf-8"))
@@ -367,6 +370,7 @@ def test_ambiguous_candidate_stops_before_placeholder_artifacts_and_leaves_evide
             output,
             template_id="marker_ambiguous",
             institution="demo",
+            temporary_root=tmp_path / "_tmp",
         )
 
     assert not (output / "placeholder_map.json").exists()
@@ -398,7 +402,7 @@ def test_marker_content_resolution_preserves_marker_and_fills_only_content(
 
     with pytest.raises(SemanticAmbiguityError) as excinfo:
         separate_hwpx_template_content(
-            source, output, template_id="marker_resolved", institution="demo"
+            source, output, template_id="marker_resolved", institution="demo", temporary_root=tmp_path / "_tmp"
         )
     (unresolved_entry,) = excinfo.value.resolution_skeleton
     decision = unresolved_entry["decision"]
@@ -430,6 +434,7 @@ def test_marker_content_resolution_preserves_marker_and_fills_only_content(
         template_id="marker_resolved",
         institution="demo",
         rules_path=rules_path,
+        temporary_root=tmp_path / "_tmp",
     )
 
     mapping = json.loads(result.placeholder_map.read_text(encoding="utf-8"))

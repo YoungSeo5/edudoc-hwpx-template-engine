@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 from pathlib import Path
+import shutil
 
 import pytest
 
@@ -18,10 +19,18 @@ _CONTEXT = RenderExecutionContext(
 _INSTITUTION = "금융감독원"
 _DOCUMENT_TYPE = "금감원 원장보고"
 _TEMPLATE_ID = "fss_director_report"
+_SOURCE = Path(__file__).resolve().parents[2] / "templates" / "institutions" / _INSTITUTION / _DOCUMENT_TYPE
+
+
+@pytest.fixture
+def approved_root(tmp_path: Path) -> Path:
+    root = tmp_path / "registry" / "approved"
+    shutil.copytree(_SOURCE, root / _INSTITUTION / _DOCUMENT_TYPE)
+    return root
 
 
 def test_direct_render_rejects_missing_template_identity_before_renderer(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, approved_root: Path
 ) -> None:
     monkeypatch.setattr(
         document_service,
@@ -37,11 +46,12 @@ def test_direct_render_rejects_missing_template_identity_before_renderer(
             tmp_path / "output.hwpx",
             _CONTEXT,
             content_template_id=None,
+            registry_root=approved_root,
         )
 
 
 def test_direct_render_rejects_mismatched_template_identity_before_renderer(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, approved_root: Path
 ) -> None:
     monkeypatch.setattr(
         document_service,
@@ -57,11 +67,12 @@ def test_direct_render_rejects_mismatched_template_identity_before_renderer(
             tmp_path / "output.hwpx",
             _CONTEXT,
             content_template_id="other-template",
+            registry_root=approved_root,
         )
 
 
 def test_direct_render_keeps_matching_template_identity(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, approved_root: Path
 ) -> None:
     output = tmp_path / "output.hwpx"
     expected = RenderResult(output=output)
@@ -78,6 +89,7 @@ def test_direct_render_keeps_matching_template_identity(
         output,
         _CONTEXT,
         content_template_id=_TEMPLATE_ID,
+        registry_root=approved_root,
     )
 
     assert result is expected
@@ -90,7 +102,7 @@ def test_source_render_passes_selected_template_identity_to_service(
     monkeypatch.setattr(
         document_service,
         "get_template_contract",
-        lambda *_args: ({"template_id": _TEMPLATE_ID, "fields": []}, None),
+        lambda *_args, **_kwargs: ({"template_id": _TEMPLATE_ID, "fields": []}, None),
     )
     monkeypatch.setattr(document_service, "read_source_as_markdown", lambda _: "source")
     monkeypatch.setattr(
@@ -107,6 +119,7 @@ def test_source_render_passes_selected_template_identity_to_service(
         execution_context: RenderExecutionContext,
         *,
         content_template_id: str | None = None,
+        registry_root: Path,
     ) -> RenderResult:
         assert institution == _INSTITUTION
         assert document_type == _DOCUMENT_TYPE
@@ -114,6 +127,7 @@ def test_source_render_passes_selected_template_identity_to_service(
         assert output_path == output
         assert execution_context == _CONTEXT
         assert content_template_id == _TEMPLATE_ID
+        assert registry_root == tmp_path / "registry" / "approved"
         return RenderResult(output=output)
 
     monkeypatch.setattr(document_service, "render_approved_document", render)
@@ -124,6 +138,7 @@ def test_source_render_passes_selected_template_identity_to_service(
         tmp_path / "source.md",
         output,
         _CONTEXT,
+        registry_root=tmp_path / "registry" / "approved",
     )
 
     assert result.output == output

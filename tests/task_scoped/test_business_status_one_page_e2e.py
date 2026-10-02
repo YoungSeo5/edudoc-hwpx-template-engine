@@ -53,9 +53,10 @@ def _project_task_rows(root: ET.Element) -> list[ET.Element]:
 
 def test_business_status_candidate_renders_sparse_normal_dense_without_state_leakage(
     tmp_path: Path,
+    sandbox_author_registry: Path,
 ) -> None:
     candidate_id = f"business_status_one_page_{uuid.uuid4().hex}"
-    candidate = tmp_path / "template-candidates" / candidate_id
+    candidate = sandbox_author_registry / "candidates" / candidate_id
 
     exit_code = author_hwpx_template.main(
         [

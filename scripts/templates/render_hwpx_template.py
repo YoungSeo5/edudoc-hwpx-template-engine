@@ -19,6 +19,7 @@ from core.adapters.hwpx_template_renderer import (  # noqa: E402
     load_template_content,
 )
 from core.document_api import render_approved_document  # noqa: E402
+from core.registry_config import RegistryConfigError, connect_registry, resolve_registry_root  # noqa: E402
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -29,6 +30,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--document-type", required=True, help="문서 유형")
     parser.add_argument("--content", required=True, type=Path, help="템플릿 content.json")
     parser.add_argument("--output", required=True, type=Path, help="출력 HWPX")
+    parser.add_argument("--registry-root", type=Path, help="외부 template registry 루트")
     # argparse required가 아닌 이유: 누락도 JSON 요약({"ok": false, ...})으로 보고한다.
     parser.add_argument(
         "--requester-name",
@@ -40,6 +42,8 @@ def main(argv: list[str] | None = None) -> int:
 
     template_id: str | None = None
     try:
+        registry_root = resolve_registry_root(args.registry_root)
+        connect_registry(registry_root)
         execution_context = (
             RenderExecutionContext(
                 requester_name=args.requester_name,
@@ -57,12 +61,14 @@ def main(argv: list[str] | None = None) -> int:
             args.output,
             execution_context,
             content_template_id=content.template_id,
+            registry_root=registry_root / "approved",
         )
     except (
         OSError,
         ValueError,
         json.JSONDecodeError,
         HwpxTemplateRenderError,
+        RegistryConfigError,
     ) as exc:
         print(
             json.dumps(

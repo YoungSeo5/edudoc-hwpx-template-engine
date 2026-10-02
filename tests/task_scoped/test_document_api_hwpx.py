@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import shutil
 import zipfile
 from datetime import datetime, timezone
 from pathlib import Path
@@ -37,8 +38,15 @@ def _content() -> dict[str, JsonValue]:
     return json.loads(CONTENT_PATH.read_text(encoding="utf-8"))
 
 
-def test_document_api_lists_only_approved_hwpx_templates() -> None:
-    approved = list_approved_templates()
+@pytest.fixture
+def approved_root(tmp_path: Path) -> Path:
+    root = tmp_path / "registry" / "approved"
+    shutil.copytree(TEMPLATE_DIR.parent, root / "금융감독원")
+    return root
+
+
+def test_document_api_lists_only_approved_hwpx_templates(approved_root: Path) -> None:
+    approved = list_approved_templates(registry_root=approved_root)
     template_ids = {candidate.identity.template_id for candidate in approved}
 
     assert "fss_director_report" in template_ids
@@ -48,10 +56,11 @@ def test_document_api_lists_only_approved_hwpx_templates() -> None:
     assert all(candidate.reference_format == "hwpx" for candidate in approved)
 
 
-def test_document_api_returns_existing_template_contract() -> None:
+def test_document_api_returns_existing_template_contract(approved_root: Path) -> None:
     placeholder_map, alias_map = get_template_contract(
         "금융감독원",
         "금감원 원장보고",
+        registry_root=approved_root,
     )
 
     assert placeholder_map["template_id"] == "fss_director_report"
@@ -67,12 +76,13 @@ def test_document_api_returns_existing_template_contract() -> None:
     assert alias_map.metadata is not None
 
 
-def test_document_api_validates_with_existing_input_preparation() -> None:
+def test_document_api_validates_with_existing_input_preparation(approved_root: Path) -> None:
     prepared = validate_template_content(
         "금융감독원",
         "금감원 원장보고",
         _content(),
         EXECUTION_CONTEXT,
+        registry_root=approved_root,
     )
 
     assert prepared.template_id == "fss_director_report"
@@ -82,7 +92,7 @@ def test_document_api_validates_with_existing_input_preparation() -> None:
     assert prepared.package_metadata.creator == "오영서"
 
 
-def test_document_api_renders_with_existing_orchestrator(tmp_path: Path) -> None:
+def test_document_api_renders_with_existing_orchestrator(tmp_path: Path, approved_root: Path) -> None:
     output = tmp_path / "document-api.hwpx"
 
     result = render_approved_document(
@@ -92,6 +102,7 @@ def test_document_api_renders_with_existing_orchestrator(tmp_path: Path) -> None
         output,
         EXECUTION_CONTEXT,
         content_template_id="fss_director_report",
+        registry_root=approved_root,
     )
 
     with zipfile.ZipFile(result.output) as package:
@@ -101,9 +112,10 @@ def test_document_api_renders_with_existing_orchestrator(tmp_path: Path) -> None
     assert "{{" not in section
     assert "<opf:title>가상자산 이상거래 대응 진행현황</opf:title>" in metadata
     assert result.title_updated is True
+    assert list((approved_root.parent / "_tmp").iterdir()) == []
 
 
-def test_document_api_preserves_source_overwrite_guard() -> None:
+def test_document_api_preserves_source_overwrite_guard(approved_root: Path) -> None:
     with pytest.raises(
         HwpxTemplateRenderError,
         match="output_path must not reference the source HWPX",
@@ -112,7 +124,8 @@ def test_document_api_preserves_source_overwrite_guard() -> None:
             "금융감독원",
             "금감원 원장보고",
             _content(),
-            TEMPLATE_DIR / "source.hwpx",
+            approved_root / "금융감독원" / "금감원 원장보고" / "source.hwpx",
             EXECUTION_CONTEXT,
             content_template_id="fss_director_report",
+            registry_root=approved_root,
         )

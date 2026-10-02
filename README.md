@@ -62,12 +62,9 @@ python -m venv .venv
    └─ NO  → 후보 추출/작성 → 사람 검토 → 사람이 승인한 경우에만 등록
 ```
 
-> **참고**: 엔진 자체는 기존 HWPX 추출과 self-authoring(계약 기반 신규 작성)
-> 두 경로를 모두 지원하지만, 현재 `SKILL.md`의 라우팅 지시는 기존 HWPX
-> 추출 경로(`qa_hwpx_template.py`)만 명시하고 있고 self-authoring
-> (`author_hwpx_template.py`) 경로는 반영돼 있지 않습니다. self-authoring이
-> 필요하면 아래 [Creating a Template](#creating-a-template)을 사람이 직접
-> 참고해 실행해야 합니다.
+`SKILL.md`는 기존 HWPX 추출과 self-authoring(계약 기반 신규 작성)을 모두
+`TEMPLATE_CREATE`로 라우팅하고, 승인 템플릿 사용은 `DOCUMENT_RENDER`로
+라우팅합니다.
 
 세부 금지 목록과 라우팅 규칙은 [SKILL.md](SKILL.md) 원문을 확인하십시오.
 

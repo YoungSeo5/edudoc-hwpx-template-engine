@@ -5,6 +5,22 @@ approved-template rendering subroutes.
 
 The top-level TEMPLATE_CREATE and DOCUMENT_RENDER E2E contracts are owned by
 [`docs/product-workflow-contract.md`](../product-workflow-contract.md).
+Its external-registry paths are the target production contract; current
+package-relative runtime storage remains unimplemented until
+[`external template registry`](../tasks/external-template-registry.md) is
+completed.
+
+```text
+<registry>/provision/<institution>/_design/ and _families/
+<registry>/self-authored/<institution>/<document_type>/
+<registry>/candidates/<candidate_id>/
+<registry>/approved/<institution>/<document_type>/
+<registry>/_audit/<template_id>/
+```
+
+`approved/` contains only explicitly approved final-renderable document
+packages. Google Drive and email can deliver review material but cannot
+promote a candidate.
 
 ## Scope and goal
 
@@ -43,7 +59,7 @@ template exists or the user explicitly requests re-extraction.
 - guess a missing source, institution, or document type, or ask the user to
   invent a new `template_id`
 - overwrite an existing candidate directory
-- write an unapproved candidate into `templates/institutions/` or change its
+- write an unapproved candidate into `<registry>/approved/` or change its
   status to `approved`
 - claim that strict package validation proves visual fidelity or institution
   approval
@@ -55,14 +71,14 @@ template exists or the user explicitly requests re-extraction.
 1. Resolve only the exact attached source. If it is missing or ambiguous, ask
    for the file.
 2. Obtain `institution` and `document_type`, then call
-   `TemplateRegistry.find(institution, document_type)`. This checks only
-   `templates/institutions/<institution>/<document-type>/template.json`.
+`TemplateRegistry.find(institution, document_type)`. This checks only
+`<registry>/approved/<institution>/<document-type>/template.json`.
 3. If an approved template exists, reuse it and do not create a candidate.
 4. If the user supplied a different `template_id`, report the conflict and stop
    until the user decides.
 5. If no approved template exists, run
-   `scripts/templates/qa_hwpx_template.py` in a new ignored
-   `sandbox/template-candidates/` directory. Omit `--template-id` unless the
+`scripts/templates/qa_hwpx_template.py` in a new ignored
+`<registry>/candidates/` directory. Omit `--template-id` unless the
    user explicitly supplied one; the command derives a stable ASCII-safe ID
    from the institution, document type, and source contents. Separation
    classifies the whole document before writing any placeholder; if any text

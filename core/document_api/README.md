@@ -8,8 +8,8 @@ Agents changing this folder must also follow [AGENTS.md](AGENTS.md).
 
 ## Current API
 
-- `list_approved_templates()` lists approved HWPX templates from the institution
-  template registry.
+- `list_approved_templates(registry_root=...)` lists approved HWPX templates
+  from the external registry's `approved/` directory.
 - `get_template_contract()` returns the existing placeholder and alias contracts.
 - `validate_template_content()` delegates to the existing HWPX input preparation.
 - `render_approved_document()` delegates to the existing approved HWPX
@@ -20,7 +20,7 @@ Agents changing this folder must also follow [AGENTS.md](AGENTS.md).
 This package contains connection code only. It does not implement renderers,
 approve candidates, rewrite template contracts, add fallback routes, or integrate
 external services. HWPX rendering remains owned by `core.adapters`, and approved
-template data remains under `templates/institutions`.
+template data is read from the caller-supplied external registry `approved/` path.
 
 Add a format-specific module only when a second document format is actually
 connected. See the

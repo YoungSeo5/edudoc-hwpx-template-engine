@@ -54,6 +54,7 @@ def discover_hancom_automation() -> HancomAutomationDiscovery:
 
 def validate_native_page_count(source: Path, expected_pages: int) -> NativePageValidation:
     """Open an HWPX through COM and compare its native layout page count."""
+    source = source.resolve()
     discovery = discover_hancom_automation()
 
     if discovery.native_page_validation == "unavailable":

@@ -49,8 +49,9 @@ def _source_hwpx(tmp_path: Path) -> Path:
 def test_cli_reports_semantic_ambiguity_and_persists_qa_report(
     tmp_path: Path,
     capsys: pytest.CaptureFixture[str],
+    sandbox_qa_registry: Path,
 ) -> None:
-    output_dir = tmp_path / "candidate"
+    output_dir = sandbox_qa_registry / "candidates" / "candidate"
 
     exit_code = qa_hwpx_template.main(
         [

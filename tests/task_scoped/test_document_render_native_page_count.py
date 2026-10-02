@@ -40,7 +40,7 @@ def _native_validation(*, passed: bool, observed_pages: int | None, reason: str 
 
 
 def _approved_template_root(tmp_path: Path, *, native_contract: bool) -> Path:
-    root = tmp_path / "institutions"
+    root = tmp_path / "registry" / "approved"
     package = root / "금융감독원" / "금감원 원페이지"
     shutil.copytree(_SOURCE_PACKAGE, package)
     if native_contract:
@@ -51,10 +51,11 @@ def _approved_template_root(tmp_path: Path, *, native_contract: bool) -> Path:
         (package / "template_spec.json").write_text(
             json.dumps(spec, ensure_ascii=False), encoding="utf-8"
         )
-        shutil.copy2(
-            ROOT / "templates" / "institutions" / "edudoc" / "_families" / "one_page_report" / "recipe.json",
-            package / "family_recipe.json",
-        )
+        recipe_source = ROOT / "templates" / "institutions" / "edudoc" / "_families" / "one_page_report" / "recipe.json"
+        recipe = tmp_path / "registry" / "provision" / "금융감독원" / "_families" / "one_page_report" / "recipe.json"
+        recipe.parent.mkdir(parents=True)
+        shutil.copy2(recipe_source, recipe)
+        (package / "family_recipe.json").write_text('{"native_page_count": 99}', encoding="utf-8")
     return root
 
 
@@ -89,7 +90,7 @@ def test_contract_artifact_persistence_copies_optional_family_recipe(
 def test_document_render_succeeds_when_native_page_contract_matches(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    monkeypatch.setattr(document_service, "_TEMPLATE_ROOT", _approved_template_root(tmp_path, native_contract=True))
+    approved_root = _approved_template_root(tmp_path, native_contract=True)
     monkeypatch.setattr(
         document_service,
         "validate_native_page_count",
@@ -99,6 +100,7 @@ def test_document_render_succeeds_when_native_page_contract_matches(
     result = document_service.render_approved_document(
         "금융감독원", "금감원 원페이지", _CONTENT, tmp_path / "success.hwpx", _CONTEXT,
         content_template_id="fss_one_page",
+        registry_root=approved_root,
     )
 
     assert result.output.is_file()
@@ -107,7 +109,7 @@ def test_document_render_succeeds_when_native_page_contract_matches(
 def test_document_render_rejects_native_page_mismatch(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    monkeypatch.setattr(document_service, "_TEMPLATE_ROOT", _approved_template_root(tmp_path, native_contract=True))
+    approved_root = _approved_template_root(tmp_path, native_contract=True)
     monkeypatch.setattr(
         document_service,
         "validate_native_page_count",
@@ -119,6 +121,7 @@ def test_document_render_rejects_native_page_mismatch(
         document_service.render_approved_document(
             "금융감독원", "금감원 원페이지", _CONTENT, output, _CONTEXT,
             content_template_id="fss_one_page",
+            registry_root=approved_root,
         )
     # A failed native-page-count contract must not leave a document behind at
     # the caller's intended output path.
@@ -128,7 +131,7 @@ def test_document_render_rejects_native_page_mismatch(
 def test_document_render_rejects_unavailable_native_validation(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    monkeypatch.setattr(document_service, "_TEMPLATE_ROOT", _approved_template_root(tmp_path, native_contract=True))
+    approved_root = _approved_template_root(tmp_path, native_contract=True)
     monkeypatch.setattr(
         document_service,
         "validate_native_page_count",
@@ -141,13 +144,14 @@ def test_document_render_rejects_unavailable_native_validation(
         document_service.render_approved_document(
             "금융감독원", "금감원 원페이지", _CONTENT, tmp_path / "unavailable.hwpx", _CONTEXT,
             content_template_id="fss_one_page",
+            registry_root=approved_root,
         )
 
 
 def test_document_render_keeps_legacy_package_without_native_contract(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    monkeypatch.setattr(document_service, "_TEMPLATE_ROOT", _approved_template_root(tmp_path, native_contract=False))
+    approved_root = _approved_template_root(tmp_path, native_contract=False)
     monkeypatch.setattr(
         document_service,
         "validate_native_page_count",
@@ -157,6 +161,7 @@ def test_document_render_keeps_legacy_package_without_native_contract(
     result = document_service.render_approved_document(
         "금융감독원", "금감원 원페이지", _CONTENT, tmp_path / "legacy.hwpx", _CONTEXT,
         content_template_id="fss_one_page",
+        registry_root=approved_root,
     )
 
     assert result.output.is_file()
@@ -182,12 +187,15 @@ def test_direct_content_cli_uses_document_api_enforcement(
         execution_context: RenderExecutionContext,
         *,
         content_template_id: str | None = None,
+        registry_root: Path,
     ) -> NoReturn:
         del institution, document_type, content, output_path, execution_context
         assert content_template_id == "fss_one_page"
         raise HwpxTemplateRenderError("native page validation failed: expected_pages=1, observed_pages=2")
 
     monkeypatch.setattr(render_hwpx_template, "render_approved_document", reject)
+    monkeypatch.setattr(render_hwpx_template, "resolve_registry_root", lambda explicit: tmp_path / "registry")
+    monkeypatch.setattr(render_hwpx_template, "connect_registry", lambda root: None)
 
     exit_code = render_hwpx_template.main(
         [

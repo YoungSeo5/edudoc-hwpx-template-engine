@@ -735,6 +735,7 @@ def test_authored_source_hwpx_becomes_a_qa_candidate_via_existing_pipeline(
     tmp_path: Path,
     capsys: pytest.CaptureFixture[str],
     monkeypatch: pytest.MonkeyPatch,
+    sandbox_qa_registry: Path,
 ) -> None:
     resolved = _resolved_from_fixture(tmp_path)
     source_hwpx = generate_source_hwpx(resolved, tmp_path / "authoring" / "source.hwpx")
@@ -742,7 +743,7 @@ def test_authored_source_hwpx_becomes_a_qa_candidate_via_existing_pipeline(
         build_separation_rules(resolved, source_hwpx), tmp_path / "authoring" / "rules.json"
     )
 
-    candidate_dir = tmp_path / "candidate"
+    candidate_dir = sandbox_qa_registry / "candidates" / "candidate"
     native_inputs: list[str] = []
 
     def native_page_count(path: Path, expected_pages: int) -> NativePageValidation:
@@ -831,6 +832,7 @@ def test_candidate_qa_fails_closed_when_source_native_page_check_fails(
     monkeypatch: pytest.MonkeyPatch,
     source_pages: int | None,
     source_reason: str | None,
+    sandbox_qa_registry: Path,
 ) -> None:
     resolved = _resolved_from_fixture(tmp_path)
     source_hwpx = generate_source_hwpx(resolved, tmp_path / "authoring" / "source.hwpx")
@@ -852,7 +854,7 @@ def test_candidate_qa_fails_closed_when_source_native_page_check_fails(
         )
 
     monkeypatch.setattr(qa_hwpx_template, "validate_native_page_count", native_page_count)
-    candidate_dir = tmp_path / "candidate"
+    candidate_dir = sandbox_qa_registry / "candidates" / "candidate"
     assert qa_hwpx_template.main(
         [
             "--source", str(source_hwpx),

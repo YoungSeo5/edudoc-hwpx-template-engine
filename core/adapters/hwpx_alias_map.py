@@ -727,11 +727,6 @@ def load_alias_map(
         if metadata_raw is not None
         else None
     )
-    if declared == "fss_director_report" and metadata is None:
-        raise AliasMapError(
-            f"{path}: fss_director_report requires metadata"
-        )
-
     return AliasMap(
         template_id=declared,
         aliases=bound,

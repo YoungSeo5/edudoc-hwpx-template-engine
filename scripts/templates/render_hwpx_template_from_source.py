@@ -25,6 +25,7 @@ from core.document_api import (  # noqa: E402
     HwpxUnresolvedFieldsError,
     render_document_from_source,
 )
+from core.registry_config import RegistryConfigError, connect_registry, resolve_registry_root  # noqa: E402
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -35,6 +36,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--document-type", required=True, help="문서 유형")
     parser.add_argument("--source", required=True, type=Path, help="source 파일 (.md/.txt/.hwpx)")
     parser.add_argument("--output", required=True, type=Path, help="출력 HWPX")
+    parser.add_argument("--registry-root", type=Path, help="외부 template registry 루트")
     parser.add_argument(
         "--requester-name",
         required=True,
@@ -48,12 +50,15 @@ def main(argv: list[str] | None = None) -> int:
         requested_at=requested_at,
     )
     try:
+        registry_root = resolve_registry_root(args.registry_root)
+        connect_registry(registry_root)
         result = render_document_from_source(
             args.institution,
             args.document_type,
             args.source,
             args.output,
             execution_context,
+            registry_root=registry_root / "approved",
         )
     except HwpxUnresolvedFieldsError as exc:
         print(
@@ -71,7 +76,7 @@ def main(argv: list[str] | None = None) -> int:
             )
         )
         return 1
-    except (OSError, ValueError, json.JSONDecodeError, HwpxTemplateRenderError) as exc:
+    except (OSError, ValueError, json.JSONDecodeError, HwpxTemplateRenderError, RegistryConfigError) as exc:
         print(
             json.dumps(
                 {

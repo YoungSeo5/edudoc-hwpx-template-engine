@@ -1,0 +1,22 @@
+{
+  "template_request_version": "v1",
+  "request_id": "new-template-e2e-validation-request-v1",
+  "institution": "edudoc",
+  "document_type": "신규 템플릿 생성 검증 보고서",
+  "purpose": "신규 HWPX template candidate 생성 파이프라인이 입력부터 candidate QA까지 정상 동작하는지 한 페이지로 보고한다.",
+  "requested_items": [
+    {"request_item_id": "report_title", "description": "보고서명", "must_include": true},
+    {"request_item_id": "department", "description": "부서명", "must_include": true},
+    {"request_item_id": "written_on", "description": "작성일", "must_include": true},
+    {"request_item_id": "author", "description": "작성자", "must_include": true},
+    {"request_item_id": "validation_scope", "description": "검증 범위", "must_include": true},
+    {"request_item_id": "summary", "description": "주요 내용", "must_include": true},
+    {"request_item_id": "validation_items", "description": "검증 항목별 결과·확인일 표", "must_include": true},
+    {"request_item_id": "findings", "description": "발견 사항", "must_include": true},
+    {"request_item_id": "follow_up", "description": "후속 조치", "must_include": true}
+  ],
+  "fixed_text": ["신규 템플릿 생성 검증 보고서"],
+  "design_requirements": [],
+  "reference_scope": {"mode": "institution_baseline_only"},
+  "constraints": ["A4 한 페이지"]
+}

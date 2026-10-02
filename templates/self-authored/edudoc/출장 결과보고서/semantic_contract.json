@@ -1,0 +1,21 @@
+{
+  "semantic_contract_version": "v1",
+  "contract_id": "business-trip-result-report-semantic-v1",
+  "template_request_id": "business-trip-result-report-request-v1",
+  "institution": "edudoc",
+  "document_type": "출장 결과보고서",
+  "elements": [
+    {"element_id": "document_title", "role": "FIXED_TEXT", "text": "출장 결과보고서"},
+    {"element_id": "traveler_label", "role": "FIXED_LABEL", "text": "출장자"}, {"element_id": "traveler", "role": "CONTENT", "field_id": "traveler", "description": "출장자 성명", "required": true, "cardinality": "one", "content_type": "text"},
+    {"element_id": "department_label", "role": "FIXED_LABEL", "text": "소속"}, {"element_id": "department", "role": "CONTENT", "field_id": "department", "description": "출장자 소속", "required": true, "cardinality": "one", "content_type": "text"},
+    {"element_id": "trip_period_label", "role": "FIXED_LABEL", "text": "출장 기간"}, {"element_id": "trip_period", "role": "CONTENT", "field_id": "trip_period", "description": "출장 시작일~종료일", "required": true, "cardinality": "one", "content_type": "date"},
+    {"element_id": "destination_label", "role": "FIXED_LABEL", "text": "출장지"}, {"element_id": "destination", "role": "CONTENT", "field_id": "destination", "description": "방문 지역 또는 장소", "required": true, "cardinality": "one", "content_type": "text"},
+    {"element_id": "written_on_label", "role": "FIXED_LABEL", "text": "작성일"}, {"element_id": "written_on", "role": "CONTENT", "field_id": "written_on", "description": "보고서 작성일", "required": true, "cardinality": "one", "content_type": "date"},
+    {"element_id": "audience_label", "role": "FIXED_LABEL", "text": "보고 대상"}, {"element_id": "audience", "role": "CONTENT", "field_id": "audience", "description": "보고받는 사람 또는 부서", "required": true, "cardinality": "one", "content_type": "text"},
+    {"element_id": "trip_purpose_label", "role": "FIXED_LABEL", "text": "출장 목적"}, {"element_id": "trip_purpose", "role": "CONTENT", "field_id": "trip_purpose", "description": "출장 목적", "required": true, "cardinality": "one", "content_type": "text"},
+    {"element_id": "expense_total_label", "role": "FIXED_LABEL", "text": "경비 합계"}, {"element_id": "expense_total", "role": "CONTENT", "field_id": "expense_total", "description": "출장 경비 합계 금액", "required": true, "cardinality": "one", "content_type": "text"},
+    {"element_id": "schedule_date_label", "role": "FIXED_LABEL", "text": "일자"}, {"element_id": "schedule_place_label", "role": "FIXED_LABEL", "text": "방문처"}, {"element_id": "schedule_activity_label", "role": "FIXED_LABEL", "text": "주요 활동"}, {"element_id": "schedule", "role": "CONTENT", "field_id": "schedule", "description": "일자·방문처·주요 활동", "required": true, "cardinality": "many", "content_type": "object", "item_fields": ["date", "place", "activity"]},
+    {"element_id": "trip_results_label", "role": "FIXED_LABEL", "text": "출장 결과"}, {"element_id": "trip_results", "role": "CONTENT", "field_id": "trip_results", "description": "회의·방문에서 논의되거나 확인된 주요 내용", "required": true, "cardinality": "one", "content_type": "text"},
+    {"element_id": "outcomes_label", "role": "FIXED_LABEL", "text": "성과 및 시사점"}, {"element_id": "outcomes", "role": "CONTENT", "field_id": "outcomes", "description": "출장으로 얻은 성과와 시사점", "required": true, "cardinality": "one", "content_type": "text"}
+  ]
+}

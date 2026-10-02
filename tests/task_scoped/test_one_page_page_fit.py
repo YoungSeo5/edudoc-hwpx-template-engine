@@ -34,7 +34,6 @@ ROOT = Path(__file__).resolve().parents[2]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from core import sandbox_paths  # noqa: E402
 from core.adapters import hwpx_page_fit as page_fit_module  # noqa: E402
 from core.adapters.hancom_page_count import (  # noqa: E402
     HancomAutomationDiscovery,
@@ -96,6 +95,7 @@ def _render(task_count: int, action_count: int, label: str, tmp_path: Path):
         output_path=output,
         institution="edudoc",
         template_id=f"page-fit-{label}-{uuid.uuid4().hex}",
+        registry_root=tmp_path / "registry",
     )
     return result, output
 
@@ -148,10 +148,10 @@ def test_one_page_page_fit_fails_explicitly_for_a_larger_overflow(tmp_path: Path
     assert result.attempt.native_page_validation.passed is False
 
 
-def test_page_fit_measurement_uses_the_repository_sandbox_not_os_temp(
+def test_page_fit_measurement_uses_registry_tmp_not_os_temp(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """AGENTS.md: QA temp artifacts stay under sandbox/, never the OS temp volume."""
+    """Production page-fit artifacts stay under the injected registry _tmp/."""
     # tempfile is a process-wide singleton module, so patching it here also
     # observes any TemporaryDirectory the rest of the render pipeline (e.g.
     # candidate separation) happens to create — filter to this module's own
@@ -171,7 +171,8 @@ def test_page_fit_measurement_uses_the_repository_sandbox_not_os_temp(
 
     _render(0, 0, "sandbox-check", tmp_path)
 
-    assert seen_dirs == [sandbox_paths.ROOT / "sandbox"]
+    assert seen_dirs == [tmp_path / "registry" / "_tmp"]
+    assert not any((tmp_path / "registry" / "_tmp").iterdir())
 
 
 def test_authoring_failure_raises_instead_of_reporting_ok_false(
@@ -195,6 +196,7 @@ def test_authoring_failure_raises_instead_of_reporting_ok_false(
             output_path=tmp_path / "authoring-failure.hwpx",
             institution="edudoc",
             template_id=f"page-fit-authoring-failure-{uuid.uuid4().hex}",
+            registry_root=tmp_path / "registry",
         )
 
 
@@ -219,6 +221,7 @@ def test_render_failure_raises_instead_of_reporting_ok_false(
             output_path=tmp_path / "render-failure.hwpx",
             institution="edudoc",
             template_id=f"page-fit-render-failure-{uuid.uuid4().hex}",
+            registry_root=tmp_path / "registry",
         )
 
 
@@ -254,6 +257,7 @@ def test_content_incomplete_despite_correct_page_count_raises(
             output_path=tmp_path / "content-incomplete.hwpx",
             institution="edudoc",
             template_id=f"page-fit-content-incomplete-{uuid.uuid4().hex}",
+            registry_root=tmp_path / "registry",
         )
 
 

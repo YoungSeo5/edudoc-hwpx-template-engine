@@ -86,6 +86,7 @@ def separate_hwpx_template_content(
     template_name: str | None = None,
     institution: str = "확인 필요",
     rules_path: Path | str | None = None,
+    temporary_root: Path,
 ) -> HwpxContentSeparationResult:
     # 흐름 1: 공통 분류 규칙과 기관별 추가 규칙을 먼저 읽는다.
     rules = load_separation_rules(rules_path)
@@ -98,6 +99,7 @@ def separate_hwpx_template_content(
         template_id=template_id,
         template_name=template_name,
         institution=institution,
+        temporary_root=temporary_root,
     )
     root = Path(output_dir)
 

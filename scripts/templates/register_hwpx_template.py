@@ -14,6 +14,7 @@ from core.templates.hwpx_template_registration import (  # noqa: E402
     TemplateRegistrationError,
     register_hwpx_template_candidate,
 )
+from core.registry_config import RegistryConfigError, connect_registry, resolve_registry_root  # noqa: E402
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -27,14 +28,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument(
         "--registry-root",
         type=Path,
-        default=ROOT / "templates" / "institutions",
-        help="정식 템플릿 루트",
-    )
-    parser.add_argument(
-        "--candidate-root",
-        type=Path,
-        default=ROOT / "sandbox" / "template-candidates",
-        help="후보가 반드시 그 안에 있어야 하는 candidate root",
+        help="외부 template registry 루트",
     )
     parser.add_argument(
         "--approve",
@@ -44,13 +38,14 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
 
     try:
+        registry_root = resolve_registry_root(args.registry_root)
+        connect_registry(registry_root)
         result = register_hwpx_template_candidate(
             args.candidate,
-            registry_root=args.registry_root,
+            registry_root=registry_root,
             approve=args.approve,
-            candidate_root=args.candidate_root,
         )
-    except (OSError, json.JSONDecodeError, TemplateRegistrationError) as exc:
+    except (OSError, json.JSONDecodeError, TemplateRegistrationError, RegistryConfigError) as exc:
         print(
             json.dumps(
                 {

@@ -87,6 +87,7 @@ def test_two_one_page_specs_share_recipe_and_materialize_without_document_branch
 
 def test_one_page_recipe_groups_metadata_and_preserves_section_hierarchy_without_field_branches(
     tmp_path: Path,
+    sandbox_qa_registry: Path,
 ) -> None:
     weekly = load_template_spec(ROOT / "tests/fixtures/template-spec/weekly_report_one_page.template_spec.json")
 
@@ -164,7 +165,7 @@ def test_one_page_recipe_groups_metadata_and_preserves_section_hierarchy_without
         build_separation_rules(resolve(DESIGN, weekly), source),
         tmp_path / "rules.json",
     )
-    candidate = tmp_path / "candidate"
+    candidate = sandbox_qa_registry / "candidates" / "candidate"
     assert qa_hwpx_template.main(
         [
             "--source",

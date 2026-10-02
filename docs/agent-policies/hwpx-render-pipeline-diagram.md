@@ -11,6 +11,19 @@
 
 새 HWPX를 직접 저작하는 TEMPLATE_CREATE authoring 경로는 source.hwpx가 생성된 뒤 candidate QA 단계에서 이 다이어그램의 QA 경로와 합류한다.
 
+External registry storage is the target production contract; package-relative
+paths remain an implementation gap until
+[external template registry](../tasks/external-template-registry.md) is
+completed.
+
+```text
+<registry>/provision/<institution>/_design/ and _families/
+<registry>/self-authored/<institution>/<document_type>/
+<registry>/candidates/<candidate_id>/
+<registry>/approved/<institution>/<document_type>/
+<registry>/_audit/<template_id>/
+```
+
 ## 검증 상태
 
 2026-08-12에 아래 소스와 한 줄씩 대조하여 정확성을 확인했다. 이후 파이프라인이
@@ -38,7 +51,7 @@ flowchart LR
         CONTEXT["RenderExecutionContext<br/>요청자·UTC 요청 시각"]
 
         PRODREG["운영 Registry<br/>approved만 조회"]
-        QAREG["QA Registry<br/>TemplateRegistry(ROOT / templates/institutions)<br/>기존 계약과 field identity 비교"]
+        QAREG["QA Registry<br/>TemplateRegistry(&lt;registry&gt; / approved)<br/>기존 계약과 field identity 비교"]
 
         DIRECTOR["원장보고<br/>approved"]
         ONEPAGE["원페이지<br/>candidate<br/>alias·metadata 계약은 존재"]

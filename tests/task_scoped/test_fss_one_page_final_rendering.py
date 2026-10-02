@@ -1,7 +1,10 @@
 from __future__ import annotations
 
 import json
+import os
 import shutil
+import subprocess
+import uuid
 import zipfile
 from datetime import datetime, timezone
 from pathlib import Path
@@ -9,6 +12,7 @@ from xml.etree import ElementTree
 
 import pytest
 
+from core.adapters import hwpx_template_renderer
 from core.adapters.hwpx_template_input import RenderExecutionContext
 from core.adapters.hwpx_template_renderer import validate_hwpx_output
 from core.document_api import render_approved_document, validate_template_content
@@ -53,12 +57,13 @@ def test_one_page_prepares_human_input_into_template_metadata(
         (ONE_PAGE_DIR / "template.json").read_text(encoding="utf-8")
     )
     assert template["status"] == "approved"
-    monkeypatch.setattr(document_service, "_TEMPLATE_ROOT", _approved_one_page_root(tmp_path))
+    approved_root = _approved_one_page_root(tmp_path)
     prepared = validate_template_content(
         "금융감독원",
         "금감원 원페이지",
         _content(),
         EXECUTION_CONTEXT,
+        registry_root=approved_root,
     )
 
     assert prepared.template_id == "fss_one_page"
@@ -82,7 +87,7 @@ def test_one_page_renders_through_the_approved_template_boundary(
     tmp_path: Path,
     monkeypatch,
 ) -> None:
-    monkeypatch.setattr(document_service, "_TEMPLATE_ROOT", _approved_one_page_root(tmp_path))
+    approved_root = _approved_one_page_root(tmp_path)
     output = tmp_path / "금감원_원페이지.hwpx"
 
     result = render_approved_document(
@@ -92,6 +97,7 @@ def test_one_page_renders_through_the_approved_template_boundary(
         output,
         EXECUTION_CONTEXT,
         content_template_id="fss_one_page",
+        registry_root=approved_root,
     )
 
     with zipfile.ZipFile(output) as package:
@@ -129,6 +135,74 @@ def test_one_page_renders_through_the_approved_template_boundary(
     assert "주요 현안 진행상황 및 대응방안" in preview
 
 
+@pytest.mark.skipif(os.name != "nt", reason="Windows ACL inheritance contract")
+def test_final_render_inherits_output_directory_acl(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    approved_root = _approved_one_page_root(tmp_path)
+    output_dir = ROOT / "sandbox" / f"acl-inheritance-{uuid.uuid4().hex}"
+    output_dir.mkdir()
+    try:
+        output = output_dir / "inherits-parent-acl.hwpx"
+        render_approved_document(
+            "금융감독원",
+            "금감원 원페이지",
+            _content(),
+            output,
+            EXECUTION_CONTEXT,
+            content_template_id="fss_one_page",
+        registry_root=approved_root,
+        )
+
+        completed = subprocess.run(
+            ["icacls.exe", str(output)],
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+        assert "(I)" in completed.stdout
+    finally:
+        shutil.rmtree(output_dir)
+
+
+def test_failed_final_render_preserves_existing_output_and_removes_temporary_sibling(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    approved_root = _approved_one_page_root(tmp_path)
+    output = tmp_path / "existing-output.hwpx"
+    output.write_bytes(b"existing output")
+
+    def fail_validation(_output: Path | str) -> None:
+        raise hwpx_template_renderer.HwpxTemplateRenderError(
+            "forced validation failure"
+        )
+
+    monkeypatch.setattr(
+        hwpx_template_renderer,
+        "validate_hwpx_output",
+        fail_validation,
+    )
+
+    with pytest.raises(
+        hwpx_template_renderer.HwpxTemplateRenderError,
+        match="forced validation failure",
+    ):
+        render_approved_document(
+            "금융감독원",
+            "금감원 원페이지",
+            _content(),
+            output,
+            EXECUTION_CONTEXT,
+            content_template_id="fss_one_page",
+        registry_root=approved_root,
+        )
+
+    assert output.read_bytes() == b"existing output"
+    assert list(tmp_path.glob(".hwpx-*.hwpx")) == []
+
+
 def test_one_page_preserves_recorded_marker_paragraph_styles(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -136,12 +210,13 @@ def test_one_page_preserves_recorded_marker_paragraph_styles(
     mapping = json.loads(
         (ONE_PAGE_DIR / "placeholder_map.json").read_text(encoding="utf-8")
     )
-    monkeypatch.setattr(document_service, "_TEMPLATE_ROOT", _approved_one_page_root(tmp_path))
+    approved_root = _approved_one_page_root(tmp_path)
     prepared = validate_template_content(
         "금융감독원",
         "금감원 원페이지",
         _content(),
         EXECUTION_CONTEXT,
+        registry_root=approved_root,
     )
     output = tmp_path / "문단서식_검증.hwpx"
     render_approved_document(
@@ -151,6 +226,7 @@ def test_one_page_preserves_recorded_marker_paragraph_styles(
         output,
         EXECUTION_CONTEXT,
         content_template_id="fss_one_page",
+        registry_root=approved_root,
     )
 
     with zipfile.ZipFile(output) as package:
@@ -223,7 +299,7 @@ def test_one_page_preserves_marker_leading_fwspaces(
     mapping = json.loads(
         (ONE_PAGE_DIR / "placeholder_map.json").read_text(encoding="utf-8")
     )
-    monkeypatch.setattr(document_service, "_TEMPLATE_ROOT", _approved_one_page_root(tmp_path))
+    approved_root = _approved_one_page_root(tmp_path)
     output = tmp_path / "marker_indent.hwpx"
     render_approved_document(
         "금융감독원",
@@ -232,6 +308,7 @@ def test_one_page_preserves_marker_leading_fwspaces(
         output,
         EXECUTION_CONTEXT,
         content_template_id="fss_one_page",
+        registry_root=approved_root,
     )
 
     with zipfile.ZipFile(output) as package:
@@ -280,7 +357,7 @@ def test_one_page_preserves_content_18_trailing_fwspaces(
     assert field["layout_context"]["trailing_fwspace_count"] == expected[1]
     assert _edge_fwspace_counts_at(template_section, field["text_node_index"]) == expected
 
-    monkeypatch.setattr(document_service, "_TEMPLATE_ROOT", _approved_one_page_root(tmp_path))
+    approved_root = _approved_one_page_root(tmp_path)
     output = tmp_path / "content_18_indent.hwpx"
     render_approved_document(
         "금융감독원",
@@ -289,6 +366,7 @@ def test_one_page_preserves_content_18_trailing_fwspaces(
         output,
         EXECUTION_CONTEXT,
         content_template_id="fss_one_page",
+        registry_root=approved_root,
     )
 
     with zipfile.ZipFile(output) as package:
@@ -311,7 +389,7 @@ def test_one_page_restores_table_cell_leading_fwspaces_after_skill_fill(
         json.dumps(mapping, ensure_ascii=False, indent=2) + "\n",
         encoding="utf-8",
     )
-    monkeypatch.setattr(document_service, "_TEMPLATE_ROOT", registry_root)
+    approved_root = registry_root
 
     output = tmp_path / "table_cell_indent.hwpx"
     render_approved_document(
@@ -321,6 +399,7 @@ def test_one_page_restores_table_cell_leading_fwspaces_after_skill_fill(
         output,
         EXECUTION_CONTEXT,
         content_template_id="fss_one_page",
+        registry_root=approved_root,
     )
 
     with zipfile.ZipFile(output) as package:
@@ -350,7 +429,7 @@ def test_one_page_restores_each_field_fwspace_in_a_filled_table_cell(
         json.dumps(mapping, ensure_ascii=False, indent=2) + "\n",
         encoding="utf-8",
     )
-    monkeypatch.setattr(document_service, "_TEMPLATE_ROOT", registry_root)
+    approved_root = registry_root
 
     output = tmp_path / "all_table_cell_indents.hwpx"
     render_approved_document(
@@ -360,6 +439,7 @@ def test_one_page_restores_each_field_fwspace_in_a_filled_table_cell(
         output,
         EXECUTION_CONTEXT,
         content_template_id="fss_one_page",
+        registry_root=approved_root,
     )
 
     with zipfile.ZipFile(output) as package:

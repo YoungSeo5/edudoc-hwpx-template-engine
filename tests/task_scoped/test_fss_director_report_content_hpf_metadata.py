@@ -206,7 +206,7 @@ def test_prepared_fss_metadata_keeps_missing_optional_conclusion_empty() -> None
     assert prepared.package_metadata.description == ""
 
 
-def test_render_cli_passes_requester_name_to_fss_metadata(tmp_path: Path) -> None:
+def test_render_cli_passes_requester_name_to_fss_metadata(tmp_path: Path, sandbox_render_registry: Path) -> None:
     content_path = tmp_path / "content.json"
     content_path.write_text(
         json.dumps(
@@ -239,6 +239,7 @@ def test_render_cli_passes_requester_name_to_fss_metadata(tmp_path: Path) -> Non
 
 def test_render_cli_rejects_fss_request_without_requester_name(
     tmp_path: Path,
+    sandbox_render_registry: Path,
 ) -> None:
     content_path = tmp_path / "content.json"
     content_path.write_text(

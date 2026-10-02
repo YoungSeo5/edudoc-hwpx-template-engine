@@ -21,10 +21,9 @@ Honesty:
   ``unknown_keys`` rather than dropped.
 - Any ``{{...}}`` still present after filling is reported as a leftover placeholder.
 - ``Contents/content.hpf`` gets fresh created/modified stamps on every render.
-  The FSS input adapter prepares its nine metadata values before rendering;
-  other templates retain the existing title/date flow.
-- The FSS director report rebuilds ``Preview/PrvText.txt`` from the final leaf
-  paragraphs after mapped table cells have been filled.
+  A metadata contract prepares package metadata values before rendering.
+- Metadata-aware rendering rebuilds ``Preview/PrvText.txt`` from the final
+  leaf paragraphs after mapped table cells have been filled.
 - The output is validated with strict HWPX package validation before it is returned
   (``validate=True``); a file that only opens in Hancom is not treated as finished.
 - A base package is required. The template's ``raw/`` folder omits entries
@@ -51,9 +50,9 @@ from xml.sax.saxutils import escape
 from fontTools.ttLib import TTFont
 
 from .hwpx_alias_map import FitConstraint, RepeatBlock
-from .hwpx_fss_director_report import (
-    FSS_META_NAMES,
-    FssPackageMetadata,
+from .hwpx_package_metadata import (
+    PACKAGE_META_NAMES,
+    PackageMetadata,
 )
 from ..templates.hwpx_layout_context import (
     LayoutContractError,
@@ -101,8 +100,8 @@ _LEADING_FWSPACE_TAG_RE = re.compile(
 _ROW_ADDRESS_RE = re.compile(r'\browAddr="(?P<row>\d+)"')
 _COL_ADDRESS_RE = re.compile(r'\bcolAddr="(?P<col>\d+)"')
 _HPF_PART = "Contents/content.hpf"
-_FSS_SECTION_PART = "Contents/section0.xml"
-_FSS_PREVIEW_TEXT_PART = "Preview/PrvText.txt"
+_SECTION_PART = "Contents/section0.xml"
+_PREVIEW_TEXT_PART = "Preview/PrvText.txt"
 _HPF_TITLE_RE = re.compile(r"<opf:title(?:\s*/>|>.*?</opf:title>)", re.DOTALL)
 _HWPUNITCHAR_DECLARATION_RE = re.compile(br"\bxmlns:hwpunitchar\s*=")
 _HWPML_ROOT_START_RE = re.compile(br"<(?:[A-Za-z_][\w.-]*:)?(?:head|sec)\b")
@@ -112,8 +111,8 @@ _HWPUNITCHAR_DECLARATION = (
 _HP_NAMESPACE = "http://www.hancom.co.kr/hwpml/2011/paragraph"
 _HH_NAMESPACE = "http://www.hancom.co.kr/hwpml/2011/head"
 _XML_NAMESPACES = {"hp": _HP_NAMESPACE, "hh": _HH_NAMESPACE}
-_FSS_FONT_FILES = {"맑은 고딕": "malgun.ttf"}
-_FSS_SYMBOL_FALLBACK = "seguisym.ttf"
+_FONT_FILES = {"맑은 고딕": "malgun.ttf"}
+_SYMBOL_FALLBACK = "seguisym.ttf"
 
 UNKNOWN = "확인 필요"
 ON_MISSING_MODES = ("keep", "sample", "unknown", "error")
@@ -123,7 +122,7 @@ ON_MISSING_MODES = ("keep", "sample", "unknown", "error")
 class _PackageContent:
     sections: Mapping[str, str]
     # None only on the candidate round-trip, where content.hpf is copied unchanged.
-    fss_metadata: FssPackageMetadata | None
+    package_metadata: PackageMetadata | None
 
 
 @dataclass(frozen=True, slots=True)
@@ -298,9 +297,9 @@ def _write_hwpx_package(
                 data = _ensure_hwpunitchar_namespace(data)
             if (
                 info.filename == _HPF_PART
-                and package_content.fss_metadata is not None
+                and package_content.package_metadata is not None
             ):
-                data = _update_fss_content_hpf(data, package_content.fss_metadata)
+                data = _update_content_hpf(data, package_content.package_metadata)
             zout.writestr(info, data)
 
     unmatched = sorted(set(package_content.sections) - replaced)
@@ -314,12 +313,13 @@ def _apply_table_fills(
     output_path: Path,
     table_fills: list[HwpxTableCellFill],
     placeholder_map: Mapping[str, JsonValue],
+    temporary_root: Path,
 ) -> None:
     if not table_fills:
         return
     with tempfile.TemporaryDirectory(
         prefix=".hwpx-template-table-fill-",
-        dir=output_path.parent,
+        dir=temporary_root,
     ) as temp:
         table_output = Path(temp) / output_path.name
         table_result = fill_hwpx_table_cells(
@@ -587,22 +587,22 @@ def _nearest_ancestor(
     return None
 
 
-def _refresh_fss_preview_text(output_path: Path) -> None:
+def _refresh_preview_text(output_path: Path, temporary_root: Path) -> None:
     with tempfile.TemporaryDirectory(
         prefix=".hwpx-template-preview-",
-        dir=output_path.parent,
+        dir=temporary_root,
     ) as temp:
         with zipfile.ZipFile(output_path) as source:
             infos = source.infolist()
             section_infos = [
-                info for info in infos if info.filename == _FSS_SECTION_PART
+                info for info in infos if info.filename == _SECTION_PART
             ]
             preview_infos = [
-                info for info in infos if info.filename == _FSS_PREVIEW_TEXT_PART
+                info for info in infos if info.filename == _PREVIEW_TEXT_PART
             ]
             if len(section_infos) != 1 or len(preview_infos) != 1:
                 raise HwpxTemplateRenderError(
-                    "fss package requires exactly one section0.xml and PrvText.txt"
+                    "metadata-aware package requires exactly one section0.xml and PrvText.txt"
                 )
 
             root = ElementTree.fromstring(source.read(section_infos[0]))
@@ -637,10 +637,10 @@ def _refresh_fss_preview_text(output_path: Path) -> None:
             with zipfile.ZipFile(preview_output, "w") as destination:
                 for info in infos:
                     payload = source.read(info)
-                    if info.filename == _FSS_PREVIEW_TEXT_PART:
+                    if info.filename == _PREVIEW_TEXT_PART:
                         payload = preview_data
                     destination.writestr(info, payload)
-        os.replace(preview_output, output_path)
+        shutil.copyfile(preview_output, output_path)
 
 
 def orchestrate_hwpx_render(
@@ -652,6 +652,7 @@ def orchestrate_hwpx_render(
     base_hwpx: Path | str | None = None,
     on_missing: str = "keep",
     validate: bool = True,
+    temporary_root: Path | None = None,
 ) -> RenderResult:
     """Generate a final document from an approved template.
 
@@ -690,6 +691,7 @@ def orchestrate_hwpx_render(
         base_hwpx=base_hwpx,
         on_missing=on_missing,
         validate=validate,
+        temporary_root=temporary_root,
     )
     if validate and result.leftover_placeholders:
         # A final render must never leave a placeholder-bearing document on
@@ -711,6 +713,7 @@ def render_prepared_hwpx_template(
     base_hwpx: Path | str | None = None,
     on_missing: str = "keep",
     validate: bool = True,
+    temporary_root: Path | None = None,
 ) -> RenderResult:
     template_dir = Path(template_dir)
     output_path = Path(output_path)
@@ -741,6 +744,7 @@ def render_prepared_hwpx_template(
         package_metadata=content.package_metadata,
         on_missing=on_missing,
         validate=validate,
+        temporary_root=temporary_root,
     )
 
 
@@ -752,6 +756,7 @@ def render_candidate_roundtrip(
     base_hwpx: Path | str | None = None,
     on_missing: str = "keep",
     validate: bool = True,
+    temporary_root: Path | None = None,
 ) -> RenderResult:
     """Round-trip a template that is still being built: structure and format only.
 
@@ -784,6 +789,7 @@ def render_candidate_roundtrip(
         package_metadata=None,
         on_missing=on_missing,
         validate=validate,
+        temporary_root=temporary_root,
     )
 
 
@@ -813,9 +819,10 @@ def _render_filled_package(
     output_path: Path,
     base: Path,
     *,
-    package_metadata: FssPackageMetadata | None,
+    package_metadata: PackageMetadata | None,
     on_missing: str,
     validate: bool,
+    temporary_root: Path | None,
 ) -> RenderResult:
     _validate_on_missing(on_missing)
     table_fills, table_filled, table_missing = _table_cell_fills(
@@ -838,20 +845,33 @@ def _render_filled_package(
     result.missing_fields = sorted(set(result.missing_fields) | table_missing)
 
     output_path.parent.mkdir(parents=True, exist_ok=True)
-    _write_hwpx_package(
-        base,
-        output_path,
-        _PackageContent(
-            sections=filled_sections,
-            fss_metadata=package_metadata,
-        ),
-    )
-    _apply_table_fills(output_path, table_fills, placeholder_map)
-    _validate_rendered_layout(output_path, placeholder_map, rewritten)
-    if package_metadata is not None:
-        _refresh_fss_preview_text(output_path)
-    if validate:
-        validate_hwpx_output(output_path)
+    work_root = temporary_root or output_path.parent
+    work_root.mkdir(parents=True, exist_ok=True)
+    with tempfile.NamedTemporaryFile(
+        prefix=".hwpx-",
+        suffix=".hwpx",
+        dir=work_root if package_metadata is None else output_path.parent,
+        delete=False,
+    ) as staging_file:
+        staged_output = Path(staging_file.name)
+    try:
+        _write_hwpx_package(
+            base,
+            staged_output,
+            _PackageContent(
+                sections=filled_sections,
+                package_metadata=package_metadata,
+            ),
+        )
+        _apply_table_fills(staged_output, table_fills, placeholder_map, work_root)
+        _validate_rendered_layout(staged_output, placeholder_map, rewritten)
+        if package_metadata is not None:
+            _refresh_preview_text(staged_output, work_root)
+        if validate:
+            validate_hwpx_output(staged_output)
+        os.replace(staged_output, output_path)
+    finally:
+        staged_output.unlink(missing_ok=True)
     result.output = output_path
     result.title_updated = package_metadata is not None
     return result
@@ -975,7 +995,7 @@ def _set_hpf_meta(xml: str, name: str, value: str) -> str:
     return filled
 
 
-def _replace_single_fss_meta(xml: str, name: str, value: str) -> str:
+def _replace_single_meta(xml: str, name: str, value: str) -> str:
     pattern = re.compile(
         rf'(<opf:meta\b(?=[^>]*\bname="{re.escape(name)}")[^>]*?)'
         r'(?:\s*/>|>.*?</opf:meta>)',
@@ -991,9 +1011,9 @@ def _replace_single_fss_meta(xml: str, name: str, value: str) -> str:
     return xml[: match.start()] + replacement + xml[match.end() :]
 
 
-def _update_fss_content_hpf(
+def _update_content_hpf(
     data: bytes,
-    metadata: FssPackageMetadata,
+    metadata: PackageMetadata,
 ) -> bytes:
     xml = data.decode("utf-8")
     title_matches = list(_HPF_TITLE_RE.finditer(xml))
@@ -1018,8 +1038,8 @@ def _update_fss_content_hpf(
         stamp,
         stamp,
     )
-    for name, value in zip(FSS_META_NAMES, values, strict=True):
-        xml = _replace_single_fss_meta(xml, name, value)
+    for name, value in zip(PACKAGE_META_NAMES, values, strict=True):
+        xml = _replace_single_meta(xml, name, value)
     return xml.encode("utf-8")
 
 
@@ -1677,7 +1697,7 @@ def _measure_text_hwpunit(
             f"source font {font_id!r} was not found"
         )
     face = font_node.attrib["face"]
-    font_file = _FSS_FONT_FILES.get(face)
+    font_file = _FONT_FILES.get(face)
     if font_file is None:
         raise HwpxTemplateRenderError(
             f"source font {face!r} has no width metric mapping"
@@ -1690,7 +1710,7 @@ def _measure_text_hwpunit(
         )
 
     # 맑은 고딕에 없는 ☑·⇨는 Windows 기호 대체 글꼴 폭으로 계산한다.
-    fallback_path = windows_dir / "Fonts" / _FSS_SYMBOL_FALLBACK
+    fallback_path = windows_dir / "Fonts" / _SYMBOL_FALLBACK
     if not fallback_path.is_file():
         raise HwpxTemplateRenderError(
             "source symbol fallback font was not found"

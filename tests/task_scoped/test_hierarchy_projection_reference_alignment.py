@@ -37,9 +37,10 @@ def test_one_page_section_heading_resolves_declared_line_spacing() -> None:
 
 def test_hierarchy_projection_uses_children_after_the_section_heading(
     tmp_path: Path,
+    sandbox_author_registry: Path,
 ) -> None:
     candidate_id = f"hierarchy_projection_{uuid.uuid4().hex}"
-    candidate = tmp_path / "template-candidates" / candidate_id
+    candidate = sandbox_author_registry / "candidates" / candidate_id
     exit_code = author_hwpx_template.main(
         [
             "--template-request", str(FIXTURES / "template_request.json"),

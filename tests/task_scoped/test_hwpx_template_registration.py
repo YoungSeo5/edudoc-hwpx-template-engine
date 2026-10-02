@@ -68,7 +68,7 @@ def _make_candidate(
 
 
 def test_registration_creates_official_path_and_registry_finds_it(tmp_path: Path) -> None:
-    candidate = _make_candidate(tmp_path / "sandbox" / "ulsan")
+    candidate = _make_candidate(tmp_path / "institutions" / "candidates" / "ulsan")
     registry_root = tmp_path / "institutions"
 
     result = register_hwpx_template_candidate(
@@ -77,15 +77,15 @@ def test_registration_creates_official_path_and_registry_finds_it(tmp_path: Path
         approve=True,
     )
 
-    destination = registry_root / "울산광역시" / "입법예고"
+    destination = registry_root / "approved" / "울산광역시" / "입법예고"
     assert result.destination == destination
     assert result.template_id == "ulsan_legislative_notice"
     assert not candidate.exists()
+    assert list((registry_root / "_tmp").iterdir()) == []
     assert (destination / "source.hwpx").is_file()
     assert not (destination / "raw").exists()
     assert (destination / "content.sample.json").is_file()
-    # audit lives inside registry_root, never beside it (registry_root is a
-    # private submodule; a sibling directory would be public-repo-tracked).
+    # Audit evidence is separate from the active approved package.
     assert (
         registry_root / "_audit" / "ulsan_legislative_notice" / "raw" / "section0.xml"
     ).is_file()
@@ -94,7 +94,7 @@ def test_registration_creates_official_path_and_registry_finds_it(tmp_path: Path
     data = json.loads((destination / "template.json").read_text(encoding="utf-8"))
     assert data["status"] == "approved"
 
-    registered = TemplateRegistry(registry_root).find("울산광역시", "입법예고")
+    registered = TemplateRegistry(registry_root / "approved").find("울산광역시", "입법예고")
     assert registered is not None
     assert registered.identity.template_id == "ulsan_legislative_notice"
 
@@ -103,13 +103,13 @@ def test_new_template_id_replaces_existing_approved_runtime_and_preserves_audits
     tmp_path: Path,
 ) -> None:
     registry_root = tmp_path / "institutions"
-    old = _make_candidate(tmp_path / "first", template_id="ulsan_v1")
+    old = _make_candidate(tmp_path / "institutions" / "candidates" / "first", template_id="ulsan_v1")
     register_hwpx_template_candidate(
         old,
         registry_root=registry_root,
         approve=True,
     )
-    second = _make_candidate(tmp_path / "second", template_id="ulsan_v2")
+    second = _make_candidate(tmp_path / "institutions" / "candidates" / "second", template_id="ulsan_v2")
 
     result = register_hwpx_template_candidate(
         second,
@@ -117,10 +117,10 @@ def test_new_template_id_replaces_existing_approved_runtime_and_preserves_audits
         approve=True,
     )
 
-    destination = registry_root / "울산광역시" / "입법예고"
+    destination = registry_root / "approved" / "울산광역시" / "입법예고"
     assert result.template_id == "ulsan_v2"
     assert not second.exists()
-    assert TemplateRegistry(registry_root).find("울산광역시", "입법예고").identity.template_id == "ulsan_v2"
+    assert TemplateRegistry(registry_root / "approved").find("울산광역시", "입법예고").identity.template_id == "ulsan_v2"
     assert (registry_root / "_audit" / "ulsan_v1" / "raw" / "section0.xml").is_file()
     assert (registry_root / "_audit" / "ulsan_v2" / "raw" / "section0.xml").is_file()
     assert not list(destination.parent.glob(".입법예고.*"))
@@ -131,13 +131,13 @@ def test_invalid_replacement_keeps_existing_approved_package_byte_for_byte(
 ) -> None:
     registry_root = tmp_path / "institutions"
     register_hwpx_template_candidate(
-        _make_candidate(tmp_path / "first", template_id="ulsan_v1"),
+        _make_candidate(tmp_path / "institutions" / "candidates" / "first", template_id="ulsan_v1"),
         registry_root=registry_root,
         approve=True,
     )
-    destination = registry_root / "울산광역시" / "입법예고"
+    destination = registry_root / "approved" / "울산광역시" / "입법예고"
     before = (destination / "template.json").read_bytes()
-    invalid = _make_candidate(tmp_path / "invalid", template_id="ulsan_v2")
+    invalid = _make_candidate(tmp_path / "institutions" / "candidates" / "invalid", template_id="ulsan_v2")
     (invalid / "source.hwpx").unlink()
 
     with pytest.raises(TemplateRegistrationError, match="missing required files"):
@@ -154,13 +154,13 @@ def test_staging_failure_keeps_existing_approved_package_and_candidate(
 ) -> None:
     registry_root = tmp_path / "institutions"
     register_hwpx_template_candidate(
-        _make_candidate(tmp_path / "first", template_id="ulsan_v1"),
+        _make_candidate(tmp_path / "institutions" / "candidates" / "first", template_id="ulsan_v1"),
         registry_root=registry_root,
         approve=True,
     )
-    destination = registry_root / "울산광역시" / "입법예고"
+    destination = registry_root / "approved" / "울산광역시" / "입법예고"
     before = (destination / "template.json").read_bytes()
-    candidate = _make_candidate(tmp_path / "second", template_id="ulsan_v2")
+    candidate = _make_candidate(tmp_path / "institutions" / "candidates" / "second", template_id="ulsan_v2")
 
     def fail_staging(source: Path, approved: Path, audit: Path) -> None:
         raise OSError("staging copy failed")
@@ -181,13 +181,13 @@ def test_swap_failure_restores_existing_approved_package_and_keeps_candidate(
 ) -> None:
     registry_root = tmp_path / "institutions"
     register_hwpx_template_candidate(
-        _make_candidate(tmp_path / "first", template_id="ulsan_v1"),
+        _make_candidate(tmp_path / "institutions" / "candidates" / "first", template_id="ulsan_v1"),
         registry_root=registry_root,
         approve=True,
     )
-    destination = registry_root / "울산광역시" / "입법예고"
+    destination = registry_root / "approved" / "울산광역시" / "입법예고"
     before = (destination / "template.json").read_bytes()
-    candidate = _make_candidate(tmp_path / "second", template_id="ulsan_v2")
+    candidate = _make_candidate(tmp_path / "institutions" / "candidates" / "second", template_id="ulsan_v2")
     real_move = registration._move_directory
 
     def fail_new_destination_move(source: Path, target: Path) -> None:
@@ -201,7 +201,7 @@ def test_swap_failure_restores_existing_approved_package_and_keeps_candidate(
         register_hwpx_template_candidate(candidate, registry_root=registry_root, approve=True)
 
     assert (destination / "template.json").read_bytes() == before
-    assert TemplateRegistry(registry_root).find("울산광역시", "입법예고").identity.template_id == "ulsan_v1"
+    assert TemplateRegistry(registry_root / "approved").find("울산광역시", "입법예고").identity.template_id == "ulsan_v1"
     assert candidate.is_dir()
     assert not (registry_root / "_audit" / "ulsan_v2").exists()
     assert not list(destination.parent.glob(".입법예고.*"))
@@ -210,29 +210,29 @@ def test_swap_failure_restores_existing_approved_package_and_keeps_candidate(
 def test_same_template_id_cannot_replace_existing_approved_artifact(tmp_path: Path) -> None:
     registry_root = tmp_path / "institutions"
     register_hwpx_template_candidate(
-        _make_candidate(tmp_path / "first", template_id="ulsan_v1"),
+        _make_candidate(tmp_path / "institutions" / "candidates" / "first", template_id="ulsan_v1"),
         registry_root=registry_root,
         approve=True,
     )
-    replacement = _make_candidate(tmp_path / "second", template_id="ulsan_v1")
+    replacement = _make_candidate(tmp_path / "institutions" / "candidates" / "second", template_id="ulsan_v1")
     (replacement / "template.review.md").write_text("# different\n", encoding="utf-8")
 
     with pytest.raises(TemplateRegistrationError, match="already registered"):
         register_hwpx_template_candidate(replacement, registry_root=registry_root, approve=True)
 
     assert replacement.is_dir()
-    assert TemplateRegistry(registry_root).find("울산광역시", "입법예고").identity.template_id == "ulsan_v1"
+    assert TemplateRegistry(registry_root / "approved").find("울산광역시", "입법예고").identity.template_id == "ulsan_v1"
 
 
 def test_duplicate_template_id_stops_registration(tmp_path: Path) -> None:
     registry_root = tmp_path / "institutions"
     register_hwpx_template_candidate(
-        _make_candidate(tmp_path / "first"),
+        _make_candidate(tmp_path / "institutions" / "candidates" / "first"),
         registry_root=registry_root,
         approve=True,
     )
     same_id = _make_candidate(
-        tmp_path / "second",
+        tmp_path / "institutions" / "candidates" / "second",
         institution="부산광역시",
         document_type="입법예고",
     )
@@ -244,19 +244,19 @@ def test_duplicate_template_id_stops_registration(tmp_path: Path) -> None:
             approve=True,
         )
 
-    assert not (registry_root / "부산광역시").exists()
+    assert not (registry_root / "approved" / "부산광역시").exists()
     assert same_id.is_dir()
 
 
 def test_registration_requires_explicit_approval(tmp_path: Path) -> None:
-    candidate = _make_candidate(tmp_path / "ulsan")
+    candidate = _make_candidate(tmp_path / "institutions" / "candidates" / "ulsan")
     registry_root = tmp_path / "institutions"
 
     with pytest.raises(TemplateRegistrationError, match="explicit approval"):
         register_hwpx_template_candidate(candidate, registry_root=registry_root)
 
     assert candidate.is_dir()
-    assert not registry_root.exists()
+    assert not (registry_root / "approved").exists()
 
 
 @pytest.mark.parametrize(
@@ -271,7 +271,7 @@ def test_incomplete_candidate_stops_registration(
     break_candidate,
     message: str,
 ) -> None:
-    candidate = _make_candidate(tmp_path / "ulsan")
+    candidate = _make_candidate(tmp_path / "institutions" / "candidates" / "ulsan")
     break_candidate(candidate)
     registry_root = tmp_path / "institutions"
 
@@ -282,11 +282,11 @@ def test_incomplete_candidate_stops_registration(
             approve=True,
         )
 
-    assert not registry_root.exists()
+    assert not (registry_root / "approved").exists()
 
 
 def test_already_approved_candidate_stops_registration(tmp_path: Path) -> None:
-    candidate = _make_candidate(tmp_path / "ulsan", status="approved")
+    candidate = _make_candidate(tmp_path / "institutions" / "candidates" / "ulsan", status="approved")
     registry_root = tmp_path / "institutions"
 
     with pytest.raises(TemplateRegistrationError, match="status='approved'"):
@@ -296,7 +296,7 @@ def test_already_approved_candidate_stops_registration(tmp_path: Path) -> None:
             approve=True,
         )
 
-    assert not registry_root.exists()
+    assert not (registry_root / "approved").exists()
 
 
 # --- Todo9: semantic 상태 등록 게이트 ---
@@ -304,7 +304,7 @@ def test_already_approved_candidate_stops_registration(tmp_path: Path) -> None:
 
 def test_unresolved_semantic_candidate_is_rejected_before_copying(tmp_path: Path) -> None:
     candidate = _make_candidate(
-        tmp_path / "ulsan",
+        tmp_path / "institutions" / "candidates" / "ulsan",
         content_separation={"status": "candidate", "semantic_status": "ambiguous"},
     )
     registry_root = tmp_path / "institutions"
@@ -317,12 +317,12 @@ def test_unresolved_semantic_candidate_is_rejected_before_copying(tmp_path: Path
         )
 
     assert candidate.is_dir()
-    assert not registry_root.exists()
+    assert not (registry_root / "approved").exists()
 
 
 def test_resolved_semantic_candidate_reaches_existing_checks(tmp_path: Path) -> None:
     candidate = _make_candidate(
-        tmp_path / "ulsan",
+        tmp_path / "institutions" / "candidates" / "ulsan",
         content_separation={"status": "candidate", "semantic_status": "resolved"},
     )
     registry_root = tmp_path / "institutions"
@@ -339,7 +339,7 @@ def test_resolved_semantic_candidate_reaches_existing_checks(tmp_path: Path) -> 
 def test_legacy_candidate_without_semantic_metadata_keeps_current_behavior(
     tmp_path: Path,
 ) -> None:
-    candidate = _make_candidate(tmp_path / "ulsan")  # no content_separation at all
+    candidate = _make_candidate(tmp_path / "institutions" / "candidates" / "ulsan")  # no content_separation at all
     registry_root = tmp_path / "institutions"
 
     result = register_hwpx_template_candidate(
@@ -363,7 +363,7 @@ def test_candidate_unreadable_by_registry_is_rejected_before_copying(
     끝난 뒤 registry.find()에서 KeyError가 났고, 후보는 사라지고 정식 경로에는
     approved가 남았다.
     """
-    candidate = _make_candidate(tmp_path / "ulsan", omit_reference_path=True)
+    candidate = _make_candidate(tmp_path / "institutions" / "candidates" / "ulsan", omit_reference_path=True)
     registry_root = tmp_path / "institutions"
 
     with pytest.raises(
@@ -378,15 +378,18 @@ def test_candidate_unreadable_by_registry_is_rejected_before_copying(
 
     assert candidate.is_dir()
     assert (candidate / "template.json").is_file()
-    assert not registry_root.exists()
+    assert not (registry_root / "approved").exists()
 
 
 def test_cli_reports_an_unreadable_candidate_as_json(
     tmp_path: Path,
     capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """결함 2: CLI가 traceback 대신 JSON 요약으로 보고해야 한다."""
-    candidate = _make_candidate(tmp_path / "ulsan", omit_reference_path=True)
+    candidate = _make_candidate(tmp_path / "institutions" / "candidates" / "ulsan", omit_reference_path=True)
+    monkeypatch.setattr(register_hwpx_template, "resolve_registry_root", lambda explicit: tmp_path / "institutions")
+    monkeypatch.setattr(register_hwpx_template, "connect_registry", lambda root: None)
 
     exit_code = register_hwpx_template.main(
         [
@@ -394,8 +397,6 @@ def test_cli_reports_an_unreadable_candidate_as_json(
             str(candidate),
             "--registry-root",
             str(tmp_path / "institutions"),
-            "--candidate-root",
-            str(tmp_path),
             "--approve",
         ]
     )
@@ -410,10 +411,10 @@ def test_cli_reports_an_unreadable_candidate_as_json(
 def test_unreadable_existing_template_names_the_offending_file(tmp_path: Path) -> None:
     """결함 3: 무관한 깨진 template.json이 원인을 밝히지 않은 채 등록을 막으면 안 된다."""
     registry_root = tmp_path / "institutions"
-    broken = registry_root / "남의기관" / "남의유형" / "template.json"
+    broken = registry_root / "approved" / "남의기관" / "남의유형" / "template.json"
     broken.parent.mkdir(parents=True)
     broken.write_text("{ broken", encoding="utf-8")
-    candidate = _make_candidate(tmp_path / "ulsan")
+    candidate = _make_candidate(tmp_path / "institutions" / "candidates" / "ulsan")
 
     with pytest.raises(TemplateRegistrationError) as error:
         register_hwpx_template_candidate(
@@ -430,7 +431,7 @@ def test_unreadable_existing_template_names_the_offending_file(tmp_path: Path) -
 
 def test_non_package_source_hwpx_stops_registration(tmp_path: Path) -> None:
     """결함 4: 렌더 불가한 source.hwpx가 approved로 등록되면 안 된다."""
-    candidate = _make_candidate(tmp_path / "ulsan")
+    candidate = _make_candidate(tmp_path / "institutions" / "candidates" / "ulsan")
     (candidate / "source.hwpx").write_bytes(b"")
     registry_root = tmp_path / "institutions"
 
@@ -444,7 +445,7 @@ def test_non_package_source_hwpx_stops_registration(tmp_path: Path) -> None:
             approve=True,
         )
 
-    assert not registry_root.exists()
+    assert not (registry_root / "approved").exists()
 
 
 def test_failed_confirmation_keeps_the_candidate_and_removes_the_copy(
@@ -452,7 +453,7 @@ def test_failed_confirmation_keeps_the_candidate_and_removes_the_copy(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """결함 1의 나머지 절반: 확인 실패 시 후보가 남고 정식 경로가 깨끗해야 한다."""
-    candidate = _make_candidate(tmp_path / "ulsan")
+    candidate = _make_candidate(tmp_path / "institutions" / "candidates" / "ulsan")
     registry_root = tmp_path / "institutions"
     monkeypatch.setattr(
         "core.templates.hwpx_template_registration.TemplateRegistry.find",
@@ -467,4 +468,4 @@ def test_failed_confirmation_keeps_the_candidate_and_removes_the_copy(
         )
 
     assert (candidate / "template.json").is_file()
-    assert not (registry_root / "울산광역시" / "입법예고").exists()
+    assert not (registry_root / "approved" / "울산광역시" / "입법예고").exists()

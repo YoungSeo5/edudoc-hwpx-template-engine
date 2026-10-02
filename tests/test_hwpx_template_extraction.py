@@ -68,7 +68,7 @@ def _sha256(path: Path) -> str:
 
 
 def test_extracts_exact_assets_and_analysis() -> None:
-    with tempfile.TemporaryDirectory() as tmp:
+    with tempfile.TemporaryDirectory(dir=Path(__file__).resolve().parents[1] / "sandbox") as tmp:
         root = Path(tmp)
         source = root / "source.hwpx"
         _write_hwpx(source)
@@ -88,6 +88,7 @@ def test_extracts_exact_assets_and_analysis() -> None:
             template_name="테스트 보고서",
             institution="테스트기관",
             fixture_dir=fixtures,
+            temporary_root=root / "_tmp",
         )
 
         assert _sha256(source) == source_hash
@@ -142,7 +143,7 @@ def test_extracts_exact_assets_and_analysis() -> None:
 
 
 def test_rejects_zip_path_escape_and_cleans_partial_output() -> None:
-    with tempfile.TemporaryDirectory() as tmp:
+    with tempfile.TemporaryDirectory(dir=Path(__file__).resolve().parents[1] / "sandbox") as tmp:
         root = Path(tmp)
         source = root / "malicious.hwpx"
         output = root / "output"
@@ -152,6 +153,7 @@ def test_rejects_zip_path_escape_and_cleans_partial_output() -> None:
                 source,
                 output,
                 template_id="malicious",
+                temporary_root=root / "_tmp",
             )
         except ValueError as exc:
             assert "unsafe HWPX archive member" in str(exc)

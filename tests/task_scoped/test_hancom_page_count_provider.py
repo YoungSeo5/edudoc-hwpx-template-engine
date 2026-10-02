@@ -37,3 +37,42 @@ def test_required_native_page_validation_rejects_unavailable_backend(
 
     assert result.passed is False
     assert result.reason == "native_page_validation_unavailable"
+
+
+def test_native_page_validation_resolves_relative_source_before_com_open(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    candidate = tmp_path / "candidate.hwpx"
+    candidate.write_bytes(b"test")
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(
+        hancom_page_count,
+        "discover_hancom_automation",
+        lambda: hancom_page_count.HancomAutomationDiscovery(
+            hancom_automation="available",
+            security_module="available",
+            native_page_validation="available",
+            security_module_name="FilePathCheckerModuleExample",
+        ),
+    )
+    opened_paths: list[Path] = []
+
+    def read_page_count(
+        source: Path,
+        security_module_name: str | None,
+    ) -> hancom_page_count._NativePageReadResult:
+        opened_paths.append(source)
+        return hancom_page_count._NativePageReadResult(
+            register_module_result=True,
+            open_succeeded=True,
+            observed_pages=1,
+            reason=None,
+        )
+
+    monkeypatch.setattr(hancom_page_count, "_read_page_count", read_page_count)
+
+    result = hancom_page_count.validate_native_page_count(Path("candidate.hwpx"), 1)
+
+    assert result.passed is True
+    assert opened_paths == [candidate.resolve()]

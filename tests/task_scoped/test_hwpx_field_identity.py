@@ -11,6 +11,7 @@ category + sample_value를 후보와 비교해 거부한다. sample_value는 pla
 from __future__ import annotations
 
 import json
+import shutil
 import sys
 from pathlib import Path
 
@@ -26,6 +27,10 @@ from scripts.templates import qa_hwpx_template  # noqa: E402
 ROOT = Path(__file__).resolve().parents[2]
 ONE_PAGE = ROOT / "templates" / "institutions" / "금융감독원" / "금감원 원페이지"
 DIRECTOR_REPORT = ROOT / "templates" / "institutions" / "금융감독원" / "금감원 원장보고"
+
+
+def _copy_approved_one_page(registry_root: Path) -> None:
+    shutil.copytree(ONE_PAGE, registry_root / "approved" / "금융감독원" / "금감원 원페이지")
 
 
 def _registry_with(tmp_path: Path, fields: list[dict], alias: dict | None) -> Path:
@@ -170,17 +175,19 @@ def test_unbound_fields_may_be_renumbered_freely(tmp_path: Path) -> None:
 def test_qa_rejects_a_reextraction_that_renumbers_bound_fields(
     tmp_path: Path,
     capsys: pytest.CaptureFixture[str],
+    sandbox_qa_registry: Path,
 ) -> None:
     """실제 사례: 금감원 원페이지를 지금 separator로 다시 뽑으면 순번이 재배치된다."""
     rules = write_content_rules_for_ambiguous_nodes(
         ONE_PAGE / "source.hwpx", tmp_path / "rules.json"
     )
+    _copy_approved_one_page(sandbox_qa_registry)
     exit_code = qa_hwpx_template.main(
         [
             "--source",
             str(ONE_PAGE / "source.hwpx"),
             "--output-dir",
-            str(tmp_path / "candidate"),
+            str(sandbox_qa_registry / "candidates" / "candidate"),
             "--institution",
             "금융감독원",
             "--document-type",
@@ -205,6 +212,7 @@ def test_qa_checks_registered_identity_outside_repository_cwd(
     tmp_path: Path,
     capsys: pytest.CaptureFixture[str],
     monkeypatch: pytest.MonkeyPatch,
+    sandbox_qa_registry: Path,
 ) -> None:
     outside_cwd = tmp_path / "outside-repository"
     outside_cwd.mkdir()
@@ -212,13 +220,14 @@ def test_qa_checks_registered_identity_outside_repository_cwd(
     rules = write_content_rules_for_ambiguous_nodes(
         ONE_PAGE / "source.hwpx", tmp_path / "rules.json"
     )
+    _copy_approved_one_page(sandbox_qa_registry)
 
     exit_code = qa_hwpx_template.main(
         [
             "--source",
             str(ONE_PAGE / "source.hwpx"),
             "--output-dir",
-            str(tmp_path / "candidate"),
+            str(sandbox_qa_registry / "candidates" / "candidate"),
             "--institution",
             "금융감독원",
             "--document-type",
@@ -240,6 +249,7 @@ def test_qa_checks_registered_identity_outside_repository_cwd(
 def test_qa_reports_when_there_is_nothing_to_compare_against(
     tmp_path: Path,
     capsys: pytest.CaptureFixture[str],
+    sandbox_qa_registry: Path,
 ) -> None:
     rules = write_content_rules_for_ambiguous_nodes(
         DIRECTOR_REPORT / "source.hwpx", tmp_path / "rules.json"
@@ -249,7 +259,7 @@ def test_qa_reports_when_there_is_nothing_to_compare_against(
             "--source",
             str(DIRECTOR_REPORT / "source.hwpx"),
             "--output-dir",
-            str(tmp_path / "candidate"),
+            str(sandbox_qa_registry / "candidates" / "candidate"),
             "--institution",
             "금융감독원",
             "--document-type",

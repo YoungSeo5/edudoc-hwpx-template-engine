@@ -32,7 +32,7 @@ DESIGN = ROOT / "tests/fixtures/template-contracts/edudoc.institution_design.jso
 
 
 def _candidate(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> Path:
-    candidate = tmp_path / "candidate"
+    candidate = tmp_path / "registry" / "candidates" / "candidate"
     assert author_hwpx_template.main(
         [
             "--template-request", str(REQUEST),
@@ -98,7 +98,7 @@ def test_resolve_rejects_unresolved_visual_property(tmp_path: Path) -> None:
 
 
 def test_contract_complete_approval_requires_evidence_and_prepares_without_alias_map(
-    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+    tmp_path: Path, capsys: pytest.CaptureFixture[str], sandbox_author_registry: Path
 ) -> None:
     candidate = _candidate(tmp_path, capsys)
     registry = tmp_path / "registry"
@@ -115,7 +115,7 @@ def test_contract_complete_approval_requires_evidence_and_prepares_without_alias
 
 @pytest.mark.parametrize("artifact", ["resolved_authoring_contract.json", "qa.report.json"])
 def test_contract_complete_approval_rejects_missing_artifact(
-    tmp_path: Path, capsys: pytest.CaptureFixture[str], artifact: str
+    tmp_path: Path, capsys: pytest.CaptureFixture[str], artifact: str, sandbox_author_registry: Path
 ) -> None:
     candidate = _candidate(tmp_path, capsys)
     _review(candidate)
@@ -124,7 +124,7 @@ def test_contract_complete_approval_rejects_missing_artifact(
         register_hwpx_template_candidate(candidate, registry_root=tmp_path / "registry", approve=True)
 
 
-def test_required_canonical_content_is_rejected_before_render(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+def test_required_canonical_content_is_rejected_before_render(tmp_path: Path, capsys: pytest.CaptureFixture[str], sandbox_author_registry: Path) -> None:
     candidate = _candidate(tmp_path, capsys)
     with pytest.raises(HwpxTemplateInputError, match="required canonical"):
         prepare_hwpx_template_input(candidate, {"report_period": "2026-08-18"})
@@ -149,7 +149,7 @@ _COLLECTION_SCALAR_CONTENT = {
 
 
 def _collection_candidate(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> Path:
-    candidate = tmp_path / "collection_candidate"
+    candidate = tmp_path / "registry" / "candidates" / "collection_candidate"
     assert author_hwpx_template.main(
         [
             "--template-request", str(_COLLECTION_REQUEST),
@@ -173,7 +173,7 @@ def _collection_candidate(tmp_path: Path, capsys: pytest.CaptureFixture[str]) ->
 
 
 def test_required_collection_content_is_recognized_with_alias_map_present(
-    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+    tmp_path: Path, capsys: pytest.CaptureFixture[str], sandbox_author_registry: Path
 ) -> None:
     candidate = _collection_candidate(tmp_path, capsys)
     content = {
@@ -189,7 +189,7 @@ def test_required_collection_content_is_recognized_with_alias_map_present(
 
 
 def test_required_collection_still_rejected_when_actually_missing_with_alias_map(
-    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+    tmp_path: Path, capsys: pytest.CaptureFixture[str], sandbox_author_registry: Path
 ) -> None:
     candidate = _collection_candidate(tmp_path, capsys)
     content = {

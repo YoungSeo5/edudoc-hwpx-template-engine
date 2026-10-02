@@ -24,20 +24,7 @@ class TemplateRegistrationError(ValueError):
 
 
 def audit_destination(registry_root: Path, template_id: str) -> Path:
-    """Where approval evidence excluded from the runtime package is kept.
-
-    This must stay inside *registry_root* rather than beside it: for the
-    production default, *registry_root* (``templates/institutions/``) is a
-    private submodule, and a sibling directory would fall outside that
-    submodule, in the public superproject's own tracked working tree —
-    raw institution XML/BinData would then show up as untracked files a
-    careless ``git add -A`` could commit to the public repository. ``_audit``
-    follows the same reserved-underscore-namespace convention institution
-    directories already use for non-document-type folders (``_design``,
-    ``_families``), so it never collides with a real institution/template_id
-    pair and is invisible to the ``*/*/template.json`` globs used elsewhere
-    (audit copies never include ``template.json``).
-    """
+    """Keep approval evidence outside the active package in the external registry."""
     return registry_root / "_audit" / template_id
 
 

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import shutil
 import zipfile
 from datetime import datetime, timezone
 from pathlib import Path
@@ -25,6 +26,11 @@ def test_approved_one_page_renders_through_public_document_api(
         requested_at=datetime(2026, 8, 11, tzinfo=timezone.utc),
     )
     output = tmp_path / "approved-one-page.hwpx"
+    approved_root = tmp_path / "registry" / "approved"
+    shutil.copytree(
+        ROOT / "templates" / "institutions" / "금융감독원" / "금감원 원페이지",
+        approved_root / "금융감독원" / "금감원 원페이지",
+    )
 
     # When: the production document API resolves and renders the checked-in template.
     result = render_approved_document(
@@ -34,6 +40,7 @@ def test_approved_one_page_renders_through_public_document_api(
         output,
         context,
         content_template_id="fss_one_page",
+        registry_root=approved_root,
     )
 
     # Then: the public approved route returns a complete, strictly valid HWPX.

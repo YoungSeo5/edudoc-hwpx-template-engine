@@ -31,8 +31,9 @@ def test_cli_fails_when_candidate_roundtrip_leaves_unresolved_placeholders(
     tmp_path: Path,
     capsys: pytest.CaptureFixture[str],
     monkeypatch: pytest.MonkeyPatch,
+    sandbox_qa_registry: Path,
 ) -> None:
-    candidate = tmp_path / "candidate"
+    candidate = sandbox_qa_registry / "candidates" / "candidate"
     rules = write_content_rules_for_ambiguous_nodes(REFERENCE, tmp_path / "rules.json")
 
     real_render = qa_hwpx_template.render_candidate_roundtrip
@@ -79,9 +80,10 @@ def test_cli_fails_when_candidate_roundtrip_leaves_unresolved_placeholders(
 def test_cli_succeeds_when_candidate_roundtrip_has_no_leftover_placeholders(
     tmp_path: Path,
     capsys: pytest.CaptureFixture[str],
+    sandbox_qa_registry: Path,
 ) -> None:
     """대조군: 정상 candidate는 새 게이트가 생겨도 그대로 통과한다."""
-    candidate = tmp_path / "candidate"
+    candidate = sandbox_qa_registry / "candidates" / "candidate"
     rules = write_content_rules_for_ambiguous_nodes(REFERENCE, tmp_path / "rules.json")
 
     exit_code = qa_hwpx_template.main(

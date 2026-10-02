@@ -99,6 +99,7 @@ def _separated(tmp_path: Path) -> Path:
         template_dir,
         template_id="layout_contract_demo",
         institution="demo",
+        temporary_root=tmp_path / "_tmp",
     )
     return template_dir
 

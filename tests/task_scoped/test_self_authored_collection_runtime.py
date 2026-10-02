@@ -24,10 +24,10 @@ _DESIGN = ROOT / "templates/institutions/edudoc/_design/design.json"
 _SPEC = ROOT / "tests/fixtures/template-spec/weekly_report_one_page.template_spec.json"
 
 
-@pytest.fixture(scope="module")
-def self_authored_candidate(tmp_path_factory: pytest.TempPathFactory) -> Path:
+@pytest.fixture
+def self_authored_candidate(sandbox_author_registry: Path) -> Path:
     candidate_id = f"collection_runtime_{uuid.uuid4().hex}"
-    candidate = tmp_path_factory.mktemp("template-candidates") / candidate_id
+    candidate = sandbox_author_registry / "candidates" / candidate_id
     exit_code = author_hwpx_template.main(
         [
             "--template-request", str(_REQUEST),

@@ -13,6 +13,11 @@ HWPX routing/package rules remain in
 Observed reference-layout evidence remains in
 [HWPX layout baseline](hwpx-layout-baseline.md).
 
+The target external storage transition is owned by
+[external template registry](tasks/external-template-registry.md). The
+external paths below are production-contract paths; current package-relative
+runtime storage remains an implementation gap until that task is completed.
+
 ## Product invariants
 
 1. Document types are contract data, never Python document-type branches.
@@ -31,14 +36,15 @@ Observed reference-layout evidence remains in
 
 | Artifact | Authoritative contents | Created by | Consumer | Canonical location |
 |---|---|---|---|---|
-| `TemplateRequest` | stated purpose, requested items, fixed text, reference scope, constraints | person/request layer | agent | production source: `templates/self-authored/<institution>/<document_type>/`; then candidate/audit snapshot |
-| Semantic Template Contract | canonical fields, roles, requiredness, cardinality, types | agent | planner, mapping, validator | production source: `templates/self-authored/<institution>/<document_type>/`; then candidate/approved runtime snapshot |
+| `TemplateRequest` | stated purpose, requested items, fixed text, reference scope, constraints | person/request layer | agent | production source: `<registry>/self-authored/<institution>/<document_type>/`; then candidate/audit snapshot |
+| Semantic Template Contract | canonical fields, roles, requiredness, cardinality, types | agent | planner, mapping, validator | production source: `<registry>/self-authored/<institution>/<document_type>/`; then candidate/approved runtime snapshot |
 | layout baseline | observed evidence | reference analysis | person/agent | `docs/hwpx-layout-baseline.md` |
-| Institution Design Contract | institution defaults, masthead policy, asset refs | institution/product policy | authoring planner | `templates/institutions/<institution>/_design/design.json` |
-| executable `TemplateSpec` | concrete ordered document layout and provenance references | authoring planner | HWPX author, page-count validator | production source: `templates/self-authored/<institution>/<document_type>/`; then candidate/approved runtime snapshot |
-| candidate | review HWPX, contracts, QA evidence | code | QA/human | `sandbox/template-candidates/<candidate_id>/` |
-| audit | QA, human review, authoring provenance, and non-runtime candidate evidence | approval process | audit/review | `<registry_root>/_audit/<template_id>/` |
-| approved package | final-renderable runtime artifacts only | approval process | registry/renderer | `templates/institutions/<institution>/<document_type>/` |
+| Institution Design Contract | institution defaults, masthead policy, asset refs | institution/product policy | authoring planner | `<registry>/provision/<institution>/_design/design.json` |
+| Document Family Recipe | page invariants and component defaults | institution/product policy | authoring planner | `<registry>/provision/<institution>/_families/<family>/` |
+| executable `TemplateSpec` | concrete ordered document layout and provenance references | authoring planner | HWPX author, page-count validator | production source: `<registry>/self-authored/<institution>/<document_type>/`; then candidate/approved runtime snapshot |
+| candidate | review HWPX, contracts, QA evidence | code | QA/human | `<registry>/candidates/<candidate_id>/` |
+| audit | QA, human review, authoring provenance, and non-runtime candidate evidence | approval process | audit/review | `<registry>/_audit/<template_id>/` |
+| approved package | final-renderable runtime artifacts only | approval process | registry/renderer | `<registry>/approved/<institution>/<document_type>/` |
 | canonical content | `template_id` and canonical `field_id -> value` | agent/direct caller | validator/renderer | per-render `content.json` |
 
 Schemas:
@@ -106,9 +112,11 @@ calculate them from `title`, `info_table`, or `body_section`.
 
 The baseline records observed reference facts. The Institution Design Contract
 records product policy/defaults for new self-authored documents. It is stored
-at `templates/institutions/<institution>/_design/design.json`; reusable logo
+at `<registry>/provision/<institution>/_design/design.json`; reusable logo
 assets are stored once under `_design/assets/` and referenced by asset ID,
-never base64-copied into a TemplateSpec.
+never base64-copied into a TemplateSpec. A new registry receives this
+read-only provision only after explicit initialization; connecting an existing
+registry never overwrites it.
 
 Product policy is fixed: self-authored institution documents default to a
 required masthead. A document-specific override is permitted only when the
@@ -131,7 +139,11 @@ Design Contract's `label_width_ratio` rather than a fixed 1:1 split.
 
 ### Candidate and approval lifecycle
 
-Storage-boundary implementation: [approved runtime / audit separation](tasks/approved-runtime-audit-separation.md).
+The current storage boundary is owned by
+[external template registry](tasks/external-template-registry.md). The
+[approved runtime / audit separation](tasks/approved-runtime-audit-separation.md)
+task is a historical implementation record and does not override the external
+registry paths below.
 
 ```text
 candidate -- machine QA --> reviewed candidate
@@ -146,10 +158,15 @@ roundtrip HWPX are not selectable inputs or fallbacks. Candidate metadata
 records the selected input paths, identities, digests, and explicit reference
 scope; it does not infer a reference from a previous candidate.
 
-Candidates exist only under `sandbox/template-candidates/<candidate_id>/` and
-are never registry-visible. An approved package is stored only at
-`templates/institutions/<institution>/<document_type>/`; the active revision's
-immutable identity is `(institution, document_type, template_id)`.
+Candidates exist only under `<registry>/candidates/<candidate_id>/` and are
+never registry-visible. An approved package is stored only at
+`<registry>/approved/<institution>/<document_type>/`; the active revision's
+immutable identity is `(institution, document_type, template_id)`. Registry
+configuration is requested only by an actual `TEMPLATE_CREATE` or
+`DOCUMENT_RENDER` request when neither an explicit registry path nor saved
+user configuration is available; skill loading does not request it.
+`<registry>/provision/` is read-only initialization data, never an approved
+document package.
 
 ### Active approved replacement (MVP)
 
@@ -171,16 +188,17 @@ cleanup occurs only after a successful replacement.
 
 This MVP retains no persistent runtime revision archive, active-pointer
 history, or rollback product feature. A successful replacement leaves only the
-new runtime package at the canonical path. Existing `_audit/<old_template_id>`
-evidence is retained, and registration adds `_audit/<new_template_id>` evidence
-for the new revision. The temporary backup is removed only after success.
+new runtime package at the canonical path. Existing
+`<registry>/_audit/<old_template_id>` evidence is retained, and registration
+adds `<registry>/_audit/<new_template_id>` evidence for the new revision. The
+temporary backup is removed only after success.
 
 Registration validates the complete candidate first, then stores only
 DOCUMENT_RENDER artifacts in the approved package and preserves every excluded
-candidate artifact under `<registry_root>/_audit/<template_id>/` — inside the
-registry root itself, never beside it, so a private `registry_root` submodule
-never leaks audit evidence into the public superproject. DOCUMENT_RENDER
-must not read the audit directory.
+candidate artifact under `<registry>/_audit/<template_id>/`. DOCUMENT_RENDER
+must not read the audit directory. Google Drive and email may distribute a
+candidate for review but do not constitute approval evidence; the approval
+record must identify the reviewed candidate and matching digest.
 
 The approval gate requires source HWPX, rendered sections and
 placeholder/location mapping, machine-QA evidence, request/semantic/spec
@@ -196,6 +214,9 @@ storage; source-extracted legacy candidates retain their existing renderability
 gate.
 
 ## DOCUMENT_RENDER
+
+Final artifact persistence implementation:
+[output ACL inheritance](tasks/document-render-output-acl-inheritance.md).
 
 ```text
 approved template identity

@@ -107,7 +107,7 @@ def _write_marker_boundary_content_rules(path: Path, text_node_indexes: tuple[in
 
 def test_separator_preserves_footer_instruction_as_fixed_text() -> None:
     # Given: a report with the exact fixed footer and a different ※ report text.
-    with tempfile.TemporaryDirectory() as tmp:
+    with tempfile.TemporaryDirectory(dir=Path(__file__).resolve().parents[1] / "sandbox") as tmp:
         root = Path(tmp)
         source = root / "source.hwpx"
         output = root / "template"
@@ -146,6 +146,7 @@ def test_separator_preserves_footer_instruction_as_fixed_text() -> None:
             template_name="demo",
             institution="demo",
             rules_path=rules,
+            temporary_root=root / "_tmp",
         )
 
         content = json.loads(result.content_sample.read_text(encoding="utf-8"))
@@ -196,7 +197,7 @@ def test_separator_preserves_footer_instruction_as_fixed_text() -> None:
 
 def test_separator_assigns_table_field_ids_in_document_order() -> None:
     # Given: a table value occurs before a later non-table document title.
-    with tempfile.TemporaryDirectory() as tmp:
+    with tempfile.TemporaryDirectory(dir=Path(__file__).resolve().parents[1] / "sandbox") as tmp:
         root = Path(tmp)
         source = root / "source.hwpx"
         output = root / "template"
@@ -211,6 +212,7 @@ def test_separator_assigns_table_field_ids_in_document_order() -> None:
             template_id="document_order",
             institution="demo",
             rules_path=rules,
+            temporary_root=root / "_tmp",
         )
         fields = json.loads(result.content_sample.read_text(encoding="utf-8"))["fields"]
 
@@ -240,7 +242,7 @@ def test_separator_records_section_ordinal_for_non_contiguous_filename(
 
 def test_separator_uses_structure_roles_and_keeps_user_values_replaceable() -> None:
     # Given: section markers, table labels, and document-specific values share one HWPX.
-    with tempfile.TemporaryDirectory() as tmp:
+    with tempfile.TemporaryDirectory(dir=Path(__file__).resolve().parents[1] / "sandbox") as tmp:
         root = Path(tmp)
         source = root / "source.hwpx"
         output = root / "template"
@@ -253,6 +255,7 @@ def test_separator_uses_structure_roles_and_keeps_user_values_replaceable() -> N
             template_id="structured_template",
             template_name="structured",
             institution="demo",
+            temporary_root=root / "_tmp",
         )
 
         mapping = json.loads(result.placeholder_map.read_text(encoding="utf-8"))
@@ -295,7 +298,7 @@ def test_separator_uses_structure_roles_and_keeps_user_values_replaceable() -> N
 
 def test_separator_is_deterministic_for_the_same_source() -> None:
     # Given: one HWPX source and two fresh output directories.
-    with tempfile.TemporaryDirectory() as tmp:
+    with tempfile.TemporaryDirectory(dir=Path(__file__).resolve().parents[1] / "sandbox") as tmp:
         root = Path(tmp)
         source = root / "source.hwpx"
         _write_hwpx(source, STRUCTURED_SECTION)
@@ -306,12 +309,14 @@ def test_separator_is_deterministic_for_the_same_source() -> None:
             root / "first",
             template_id="structured_template",
             institution="demo",
+            temporary_root=root / "_tmp",
         )
         second = separate_hwpx_template_content(
             source,
             root / "second",
             template_id="structured_template",
             institution="demo",
+            temporary_root=root / "_tmp",
         )
 
         # Then: every content-separation derivative is byte-identical.
@@ -358,7 +363,7 @@ def _write_two_section_hwpx(path: Path, section0: str, section1: str) -> None:
 
 def test_separator_assigns_globally_unique_field_ids_across_sections() -> None:
     # Given: two sections whose replaceable content collides under per-section numbering.
-    with tempfile.TemporaryDirectory() as tmp:
+    with tempfile.TemporaryDirectory(dir=Path(__file__).resolve().parents[1] / "sandbox") as tmp:
         root = Path(tmp)
         source = root / "source.hwpx"
         output = root / "template"
@@ -370,7 +375,7 @@ def test_separator_assigns_globally_unique_field_ids_across_sections() -> None:
 
         # When: the source is separated into content and template XML.
         result = separate_hwpx_template_content(
-            source, output, template_id="multi_section", institution="demo"
+            source, output, template_id="multi_section", institution="demo", temporary_root=root / "_tmp"
         )
 
         content = json.loads(result.content_sample.read_text(encoding="utf-8"))
@@ -387,7 +392,7 @@ def test_separator_assigns_globally_unique_field_ids_across_sections() -> None:
 
 
 def test_separator_records_paragraph_style_contract() -> None:
-    with tempfile.TemporaryDirectory() as tmp:
+    with tempfile.TemporaryDirectory(dir=Path(__file__).resolve().parents[1] / "sandbox") as tmp:
         root = Path(tmp)
         source = root / "source.hwpx"
         output = root / "template"
@@ -409,7 +414,7 @@ def test_separator_records_paragraph_style_contract() -> None:
             package.writestr("settings.xml", "<settings/>")
 
         result = separate_hwpx_template_content(
-            source, output, template_id="styled_template", institution="demo", rules_path=rules
+            source, output, template_id="styled_template", institution="demo", rules_path=rules, temporary_root=root / "_tmp"
         )
 
         mapping = json.loads(result.placeholder_map.read_text(encoding="utf-8"))

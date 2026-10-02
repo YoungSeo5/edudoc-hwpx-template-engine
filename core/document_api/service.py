@@ -3,7 +3,6 @@ from __future__ import annotations
 import json
 from collections.abc import Mapping
 from pathlib import Path
-from typing import Final
 
 from core.adapters.hwpx_alias_map import AliasMap, JsonValue, load_alias_map
 from core.adapters.hwpx_source_content_mapper import map_source_to_content
@@ -19,18 +18,9 @@ from core.adapters.hwpx_template_renderer import (
     RenderResult,
     orchestrate_hwpx_render,
 )
-from core.adapters.hwpx_template_authoring import (
-    HwpxTemplateAuthoringError,
-    load_template_spec,
-)
 from core.adapters.hancom_page_count import validate_native_page_count
 from core.templates.models import TemplateCandidate
 from core.templates.registry import TemplateRegistry
-
-_TEMPLATE_ROOT: Final = (
-    Path(__file__).resolve().parents[2] / "templates" / "institutions"
-)
-
 
 class HwpxUnresolvedFieldsError(HwpxTemplateRenderError):
     """Raised when source mapping leaves fields unresolved.
@@ -49,11 +39,11 @@ class HwpxUnresolvedFieldsError(HwpxTemplateRenderError):
         )
 
 
-def list_approved_templates() -> tuple[TemplateCandidate, ...]:
-    registry = TemplateRegistry(_TEMPLATE_ROOT)
+def list_approved_templates(*, registry_root: Path) -> tuple[TemplateCandidate, ...]:
+    registry = TemplateRegistry(registry_root)
     approved: list[TemplateCandidate] = []
-    for path in sorted(_TEMPLATE_ROOT.glob("*/*/template.json")):
-        relative = path.relative_to(_TEMPLATE_ROOT)
+    for path in sorted(registry_root.glob("*/*/template.json")):
+        relative = path.relative_to(registry_root)
         institution, document_type = relative.parts[:2]
         candidate = registry.find(institution, document_type)
         if candidate is not None and candidate.reference_format == "hwpx":
@@ -64,8 +54,10 @@ def list_approved_templates() -> tuple[TemplateCandidate, ...]:
 def get_template_contract(
     institution: str,
     document_type: str,
+    *,
+    registry_root: Path,
 ) -> tuple[Mapping[str, JsonValue], AliasMap | None]:
-    template_dir = _approved_template_dir(institution, document_type)
+    template_dir = _approved_template_dir(institution, document_type, registry_root=registry_root)
     placeholder_map = load_placeholder_map(template_dir)
     fields_raw = placeholder_map.get("fields", [])
     field_ids = frozenset(
@@ -90,9 +82,11 @@ def validate_template_content(
     document_type: str,
     content: Mapping[str, JsonValue],
     execution_context: RenderExecutionContext,
+    *,
+    registry_root: Path,
 ) -> PreparedRenderContent:
     return prepare_hwpx_template_input(
-        _approved_template_dir(institution, document_type),
+        _approved_template_dir(institution, document_type, registry_root=registry_root),
         content,
         execution_context=execution_context,
     )
@@ -106,6 +100,7 @@ def render_approved_document(
     execution_context: RenderExecutionContext,
     *,
     content_template_id: str,
+    registry_root: Path,
 ) -> RenderResult:
     if not content_template_id:
         raise HwpxTemplateRenderError("content template_id is required for final rendering")
@@ -113,13 +108,17 @@ def render_approved_document(
         institution,
         document_type,
         content_template_id=content_template_id,
+        registry_root=registry_root,
     )
-    expected_pages = _native_page_count_contract(template_dir)
+    expected_pages = _native_page_count_contract(
+        template_dir, registry_root.parent / "provision" / institution
+    )
     result = orchestrate_hwpx_render(
         template_dir,
         content,
         output_path,
         execution_context=execution_context,
+        temporary_root=registry_root.parent / "_tmp",
     )
     if expected_pages is None:
         return result
@@ -143,6 +142,8 @@ def render_document_from_source(
     source_path: Path | str,
     output_path: Path,
     execution_context: RenderExecutionContext,
+    *,
+    registry_root: Path,
 ) -> RenderResult:
     """Render an approved document from a source content file (.md/.txt/.hwpx).
 
@@ -152,7 +153,7 @@ def render_document_from_source(
     (``HwpxUnresolvedFieldsError``). This is stricter than
     ``render_approved_document``, which renders whatever content it is given.
     """
-    placeholder_map, alias_map = get_template_contract(institution, document_type)
+    placeholder_map, alias_map = get_template_contract(institution, document_type, registry_root=registry_root)
     markdown = read_source_as_markdown(source_path)
     mapping = map_source_to_content(markdown, placeholder_map, alias_map)
     if mapping.unresolved_fields:
@@ -164,6 +165,7 @@ def render_document_from_source(
         output_path,
         execution_context,
         content_template_id=_template_id_from_placeholder_map(placeholder_map),
+        registry_root=registry_root,
     )
 
 
@@ -172,8 +174,9 @@ def _approved_template_dir(
     document_type: str,
     *,
     content_template_id: str | None = None,
+    registry_root: Path,
 ) -> Path:
-    registry = TemplateRegistry(_TEMPLATE_ROOT)
+    registry = TemplateRegistry(registry_root)
     candidate = registry.find(institution, document_type)
     if candidate is None:
         raise HwpxTemplateRenderError(
@@ -196,19 +199,24 @@ def _template_id_from_placeholder_map(placeholder_map: Mapping[str, JsonValue]) 
     return template_id
 
 
-def _native_page_count_contract(template_dir: Path) -> int | None:
+def _native_page_count_contract(template_dir: Path, institution_provision: Path) -> int | None:
     template_spec_path = template_dir / "template_spec.json"
     if not template_spec_path.is_file():
         return None
     try:
-        spec = load_template_spec(template_spec_path)
-    except (HwpxTemplateAuthoringError, OSError, ValueError) as exc:
+        spec = json.loads(template_spec_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
         raise HwpxTemplateRenderError(
             f"cannot resolve approved native page-count contract: {exc}"
         ) from exc
-    if not spec.family_recipe_path:
+    if not isinstance(spec, dict):
+        raise HwpxTemplateRenderError("approved template_spec.json must be an object")
+    if not spec.get("family_recipe"):
         return None
-    recipe_path = Path(spec.family_recipe_path)
+    family = spec.get("document_family")
+    if not isinstance(family, str) or family in ("", ".", "..") or Path(family).name != family:
+        raise HwpxTemplateRenderError("approved document_family must be one path component")
+    recipe_path = institution_provision / "_families" / family / "recipe.json"
     try:
         recipe = json.loads(recipe_path.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError) as exc:

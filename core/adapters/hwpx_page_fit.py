@@ -46,7 +46,6 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Mapping
 
-from ..sandbox_paths import SandboxUnavailableError, require_sandbox_temp_root
 from .hancom_page_count import NativePageValidation, validate_native_page_count
 from .hwpx_authoring_resolve import HwpxAuthoringResolveError, resolve
 from .hwpx_semantic_contract import (
@@ -101,6 +100,7 @@ def render_one_page_with_page_fit(
     output_path: Path,
     institution: str,
     template_id: str,
+    registry_root: Path,
     expected_pages: int | None = None,
 ) -> PageFitResult:
     """Render *content* once at the family's declared `default` layout and
@@ -133,11 +133,9 @@ def render_one_page_with_page_fit(
     except (HwpxTemplateAuthoringError, SemanticContractError, OSError, ValueError) as exc:
         raise HwpxPageFitError(f"cannot prepare semantic binding: {exc}") from exc
 
-    try:
-        sandbox_root = require_sandbox_temp_root()
-    except SandboxUnavailableError as exc:
-        raise HwpxPageFitError(str(exc)) from exc
-    with tempfile.TemporaryDirectory(prefix="hwpx-page-fit-", dir=sandbox_root) as tmp:
+    temporary_root = registry_root / "_tmp"
+    temporary_root.mkdir(parents=True, exist_ok=True)
+    with tempfile.TemporaryDirectory(prefix="hwpx-page-fit-", dir=temporary_root) as tmp:
         attempt, rendered_output = _attempt_default(
             tmp_root=Path(tmp),
             spec=spec,
@@ -188,6 +186,7 @@ def _attempt_default(
             template_id=template_id,
             institution=institution,
             rules_path=rules_path,
+            temporary_root=tmp_root,
         )
     except (
         HwpxAuthoringResolveError,
@@ -204,7 +203,9 @@ def _attempt_default(
 
     rendered_output = tmp_root / "rendered.hwpx"
     try:
-        result: RenderResult = render_candidate_roundtrip(candidate_dir, content, rendered_output)
+        result: RenderResult = render_candidate_roundtrip(
+            candidate_dir, content, rendered_output, temporary_root=tmp_root
+        )
     except HwpxTemplateRenderError as exc:
         # Same reasoning: a render failure is a caller-fixable defect, not a
         # page-fit outcome.

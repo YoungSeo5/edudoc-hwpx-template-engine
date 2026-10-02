@@ -76,8 +76,8 @@ def test_registration_separates_approved_runtime_from_audit_evidence(
     tmp_path: Path,
 ) -> None:
     # Given: runtime artifacts and approval evidence share one candidate directory.
-    candidate = _candidate(tmp_path / "candidate")
     registry_root = tmp_path / "institutions"
+    candidate = _candidate(registry_root / "candidates" / "candidate")
 
     # When: the candidate is explicitly approved.
     result = register_hwpx_template_candidate(
@@ -98,8 +98,7 @@ def test_registration_separates_approved_runtime_from_audit_evidence(
         "template/section0.template.xml",
         "template_spec.json",
     }
-    # audit lives inside registry_root (the private submodule boundary), never
-    # beside it — a sibling directory would land in the public superproject.
+    # Audit evidence is separate from the active approved package.
     audit = registry_root / "_audit" / "runtime_audit_demo"
     assert _relative_files(audit) == {
         "content.test.json",
@@ -120,8 +119,7 @@ def test_registration_separates_approved_runtime_from_audit_evidence(
     }
     assert json.loads((result.destination / "template.json").read_text())["status"] == "approved"
     assert not candidate.exists()
-    # And: nothing lands beside registry_root, where a real registry_root is a
-    # private submodule and a sibling directory would be public-repo-tracked.
+    # And: nothing lands beside registry_root.
     assert not (registry_root.parent / "audit").exists()
 
 
@@ -130,8 +128,8 @@ def test_failed_registration_confirmation_removes_runtime_and_audit_copies(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     # Given: a valid candidate whose final registry confirmation will fail.
-    candidate = _candidate(tmp_path / "candidate")
     registry_root = tmp_path / "institutions"
+    candidate = _candidate(registry_root / "candidates" / "candidate")
     monkeypatch.setattr(
         "core.templates.hwpx_template_registration.TemplateRegistry.find",
         lambda self, institution, document_type: None,
@@ -147,5 +145,5 @@ def test_failed_registration_confirmation_removes_runtime_and_audit_copies(
 
     # Then: only the original candidate remains.
     assert candidate.is_dir()
-    assert not (registry_root / "edudoc" / "runtime-audit-demo").exists()
+    assert not (registry_root / "approved" / "edudoc" / "runtime-audit-demo").exists()
     assert not (registry_root / "_audit" / "runtime_audit_demo").exists()

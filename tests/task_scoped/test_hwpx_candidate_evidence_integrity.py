@@ -24,8 +24,8 @@ SPEC = ROOT / "tests/fixtures/template-spec/weekly_report.template_spec.json"
 DESIGN = ROOT / "tests/fixtures/template-contracts/edudoc.institution_design.json"
 
 
-def _candidate(directory: Path, capsys: pytest.CaptureFixture[str], template_id: str) -> Path:
-    candidate = directory / "candidate"
+def _candidate(directory: Path, registry_root: Path, capsys: pytest.CaptureFixture[str], template_id: str) -> Path:
+    candidate = registry_root / "candidates" / directory.name
     exit_code = author_hwpx_template.main(
         [
             "--template-request", str(REQUEST),
@@ -59,25 +59,25 @@ def _approve_review(candidate: Path, candidate_digest: str) -> None:
 
 
 def test_registration_rejects_qa_evidence_copied_from_another_candidate(
-    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+    tmp_path: Path, capsys: pytest.CaptureFixture[str], sandbox_author_registry: Path
 ) -> None:
-    candidate_a = _candidate(tmp_path / "a", capsys, "tpl_evidence_a")
-    candidate_b = _candidate(tmp_path / "b", capsys, "tpl_evidence_b")
+    candidate_a = _candidate(tmp_path / "a", sandbox_author_registry, capsys, "tpl_evidence_a")
+    candidate_b = _candidate(tmp_path / "b", sandbox_author_registry, capsys, "tpl_evidence_b")
     shutil.copy2(candidate_a / "qa.report.json", candidate_b / "qa.report.json")
     _approve_review(candidate_b, candidate_artifact_digest(candidate_b))
 
     with pytest.raises(TemplateRegistrationError, match="machine QA evidence"):
         register_hwpx_template_candidate(
             candidate_b,
-            registry_root=tmp_path / "registry",
+            registry_root=sandbox_author_registry,
             approve=True,
         )
 
 
 def test_registration_rejects_candidate_changed_after_machine_qa(
-    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+    tmp_path: Path, capsys: pytest.CaptureFixture[str], sandbox_author_registry: Path
 ) -> None:
-    candidate = _candidate(tmp_path, capsys, "tpl_changed_after_qa")
+    candidate = _candidate(tmp_path, sandbox_author_registry, capsys, "tpl_changed_after_qa")
     _approve_review(candidate, candidate_artifact_digest(candidate))
     template = candidate / "template" / "section0.template.xml"
     template.write_text(template.read_text(encoding="utf-8") + "\n", encoding="utf-8")
@@ -85,21 +85,21 @@ def test_registration_rejects_candidate_changed_after_machine_qa(
     with pytest.raises(TemplateRegistrationError, match="machine QA evidence"):
         register_hwpx_template_candidate(
             candidate,
-            registry_root=tmp_path / "registry",
+            registry_root=sandbox_author_registry,
             approve=True,
         )
 
 
 def test_registration_rejects_human_review_for_another_candidate(
-    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+    tmp_path: Path, capsys: pytest.CaptureFixture[str], sandbox_author_registry: Path
 ) -> None:
-    candidate = _candidate(tmp_path, capsys, "tpl_wrong_review")
+    candidate = _candidate(tmp_path, sandbox_author_registry, capsys, "tpl_wrong_review")
     _approve_review(candidate, "different-candidate")
 
     with pytest.raises(TemplateRegistrationError, match="human visual approval evidence"):
         register_hwpx_template_candidate(
             candidate,
-            registry_root=tmp_path / "registry",
+            registry_root=sandbox_author_registry,
             approve=True,
         )
 
@@ -108,8 +108,9 @@ def test_authoring_makes_final_candidate_artifacts_available_before_qa_digest(
     tmp_path: Path,
     capsys: pytest.CaptureFixture[str],
     monkeypatch: pytest.MonkeyPatch,
+    sandbox_author_registry: Path,
 ) -> None:
-    candidate = tmp_path / "candidate"
+    candidate = sandbox_author_registry / "candidates" / "candidate"
     required = (
         "template_request.json",
         "semantic_contract.json",

@@ -95,6 +95,7 @@ def _separate(tmp_path: Path):
         template_id="multi_node_cell",
         template_name="multi node cell",
         institution="demo",
+        temporary_root=tmp_path / "_tmp",
         rules_path=_marker_boundary_content_rules(tmp_path, (1, 3)),
     )
     mapping = json.loads((output / "placeholder_map.json").read_text(encoding="utf-8"))
@@ -161,6 +162,7 @@ def test_roundtrip_fills_multi_node_text_and_single_node_cell_together(
         template_id="one_page_multi_node_roundtrip",
         template_name="one page multi node roundtrip",
         institution="금융감독원",
+        temporary_root=tmp_path / "_tmp",
         rules_path=_marker_boundary_content_rules(tmp_path, (0, 4, 25, 26, 27, 42)),
     )
     mapping = json.loads(

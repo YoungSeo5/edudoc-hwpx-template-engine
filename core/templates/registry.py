@@ -10,7 +10,7 @@ from .serialization import load_candidate
 
 
 class TemplateRegistry:
-    def __init__(self, root: Path | str = "templates/institutions") -> None:
+    def __init__(self, root: Path | str) -> None:
         self.root = Path(root)
 
     def template_path(self, institution: str, document_type: str) -> Path:

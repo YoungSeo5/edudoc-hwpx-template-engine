@@ -1,0 +1,20 @@
+{
+  "semantic_contract_version": "v1",
+  "contract_id": "new-template-e2e-validation-semantic-v1",
+  "template_request_id": "new-template-e2e-validation-request-v1",
+  "institution": "edudoc",
+  "document_type": "신규 템플릿 생성 검증 보고서",
+  "elements": [
+    {"element_id": "document_title", "role": "FIXED_TEXT", "text": "신규 템플릿 생성 검증 보고서"},
+    {"element_id": "report_title_label", "role": "FIXED_LABEL", "text": "보고서명"}, {"element_id": "report_title", "role": "CONTENT", "field_id": "report_title", "description": "보고서명", "required": true, "cardinality": "one", "content_type": "text"},
+    {"element_id": "department_label", "role": "FIXED_LABEL", "text": "부서명"}, {"element_id": "department", "role": "CONTENT", "field_id": "department", "description": "작성 부서명", "required": true, "cardinality": "one", "content_type": "text"},
+    {"element_id": "written_on_label", "role": "FIXED_LABEL", "text": "작성일"}, {"element_id": "written_on", "role": "CONTENT", "field_id": "written_on", "description": "작성일", "required": true, "cardinality": "one", "content_type": "date"},
+    {"element_id": "author_label", "role": "FIXED_LABEL", "text": "작성자"}, {"element_id": "author", "role": "CONTENT", "field_id": "author", "description": "작성자", "required": true, "cardinality": "one", "content_type": "text"},
+    {"element_id": "validation_scope_label", "role": "FIXED_LABEL", "text": "검증 범위"}, {"element_id": "validation_scope", "role": "CONTENT", "field_id": "validation_scope", "description": "검증 대상 범위", "required": true, "cardinality": "one", "content_type": "text"},
+    {"element_id": "summary_label", "role": "FIXED_LABEL", "text": "주요 내용"}, {"element_id": "summary", "role": "CONTENT", "field_id": "summary", "description": "검증 목적과 핵심 결과", "required": true, "cardinality": "one", "content_type": "text"},
+    {"element_id": "validation_items_name_label", "role": "FIXED_LABEL", "text": "검증 항목"}, {"element_id": "validation_items_result_label", "role": "FIXED_LABEL", "text": "결과"}, {"element_id": "validation_items_checked_on_label", "role": "FIXED_LABEL", "text": "확인일"},
+    {"element_id": "validation_items", "role": "CONTENT", "field_id": "validation_items", "description": "검증 항목별 결과와 확인일", "required": true, "cardinality": "many", "content_type": "object", "item_fields": ["item_name", "result", "checked_on"]},
+    {"element_id": "findings_label", "role": "FIXED_LABEL", "text": "발견 사항"}, {"element_id": "findings", "role": "CONTENT", "field_id": "findings", "description": "검증 중 발견한 사항", "required": true, "cardinality": "one", "content_type": "text"},
+    {"element_id": "follow_up_label", "role": "FIXED_LABEL", "text": "후속 조치"}, {"element_id": "follow_up", "role": "CONTENT", "field_id": "follow_up", "description": "후속 조치 계획", "required": true, "cardinality": "one", "content_type": "text"}
+  ]
+}

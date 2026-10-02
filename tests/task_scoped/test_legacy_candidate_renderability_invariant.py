@@ -16,7 +16,6 @@ from xml.etree import ElementTree
 
 import pytest
 
-from core import sandbox_paths
 from core.adapters.hwpx_template_renderer import snapshot_source_hwpx
 from core.templates import hwpx_template_registration as registration_module
 from core.templates.hwpx_layout_context import LAYOUT_CONTRACT, DocumentLayout
@@ -39,8 +38,8 @@ def _legacy_candidate(
     template_id: str = "legacy_renderable_demo",
 ) -> Path:
     """semantic_contract.json 없이, 실제로 렌더 가능한 최소 legacy 후보를 만든다."""
-    candidate = tmp_path / "candidate"
-    candidate.mkdir()
+    candidate = tmp_path / "institutions" / "candidates" / "candidate"
+    candidate.mkdir(parents=True)
 
     section0 = zipfile.ZipFile(BROTHER_HWPX).read("Contents/section0.xml").decode("utf-8")
     target = next(t for t in re.findall(r"<hp:t>([^<]+)</hp:t>", section0) if t.strip())
@@ -129,10 +128,10 @@ def test_registration_accepts_legacy_candidate_whose_sample_content_renders_clea
     assert result.template_id == "legacy_renderable_demo"
 
 
-def test_renderability_check_uses_the_repository_sandbox_not_os_temp(
+def test_renderability_check_uses_registry_tmp_not_os_temp(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """AGENTS.md: QA temp artifacts stay under sandbox/, never the OS temp volume."""
+    """Production registration checks use the registry _tmp/ boundary."""
     candidate = _legacy_candidate(tmp_path, sample_fields={"demo_field": "정상 값"})
     registry_root = tmp_path / "institutions"
 
@@ -150,7 +149,8 @@ def test_renderability_check_uses_the_repository_sandbox_not_os_temp(
 
     register_hwpx_template_candidate(candidate, registry_root=registry_root, approve=True)
 
-    assert seen_dirs == [sandbox_paths.ROOT / "sandbox"]
+    assert seen_dirs == [registry_root / "_tmp"]
+    assert not any((registry_root / "_tmp").iterdir())
 
 
 def test_registration_rejects_legacy_candidate_that_cannot_render_its_own_sample_content(
@@ -174,7 +174,7 @@ def test_registration_rejects_legacy_candidate_that_cannot_render_its_own_sample
         )
 
     assert candidate.is_dir()
-    assert not registry_root.exists()
+    assert not (registry_root / "approved").exists()
 
 
 def test_legacy_candidate_with_no_declared_fields_skips_renderability_check(

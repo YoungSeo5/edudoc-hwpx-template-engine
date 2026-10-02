@@ -11,7 +11,6 @@ from pathlib import Path
 from uuid import uuid4
 
 from .registry import TemplateRegistry
-from ..sandbox_paths import SandboxUnavailableError, require_sandbox_temp_root
 from .serialization import load_candidate
 from .hwpx_template_storage import (
     TemplateRegistrationError,
@@ -78,37 +77,28 @@ def register_hwpx_template_candidate(
     *,
     registry_root: Path | str,
     approve: bool = False,
-    candidate_root: Path | str | None = None,
 ) -> TemplateRegistrationResult:
-    """Move an approved candidate to its official path and confirm registration.
-
-    *candidate_root*, when given, is the one boundary this function enforces
-    before anything else runs: *candidate_dir* must resolve to a path inside
-    it, or registration is rejected before any file is even opened. Omitting
-    *candidate_root* (the default) keeps this function's prior behavior
-    unchanged for callers that manage their own candidate location (e.g.
-    existing tests using an isolated temp directory) — the check only
-    activates for a caller that opts in, such as the CLI script, which always
-    passes the real candidate root.
-    """
+    """Register one candidate from this external registry after explicit approval."""
     # 흐름 1: 승인은 사람의 명시적 의사여야 한다. 코드가 스스로 승격하지 않는다.
     if not approve:
         raise TemplateRegistrationError(
             "registration requires explicit approval (approve=True)"
         )
 
+    root = Path(registry_root)
     source = Path(candidate_dir)
-    if candidate_root is not None:
-        require_within_candidate_root(source, Path(candidate_root))
-    identity = _validate_candidate(source)
+    require_within_candidate_root(source, root / "candidates")
+    temporary_root = root / "_tmp"
+    identity = _validate_candidate(source, temporary_root)
     institution = identity["institution"]
     document_type = identity["document_type"]
     template_id = identity["template_id"]
 
     # 흐름 2: 대상 경로와 template_id 충돌을 복사 전에 모두 확인한다.
-    registry = TemplateRegistry(registry_root)
+    approved_root = root / "approved"
+    registry = TemplateRegistry(approved_root)
     destination = registry.template_path(institution, document_type).parent
-    audit = audit_destination(Path(registry_root), template_id)
+    audit = audit_destination(root, template_id)
     if destination.exists():
         if destination.resolve() == source.resolve():
             raise TemplateRegistrationError(
@@ -119,7 +109,7 @@ def register_hwpx_template_candidate(
             raise TemplateRegistrationError(
                 f"destination exists but is not an approved template: {destination}"
             )
-    reject_template_id_conflict(Path(registry_root), template_id)
+    reject_template_id_conflict(approved_root, template_id)
     if audit.exists():
         raise TemplateRegistrationError(f"audit path already exists: {audit}")
 
@@ -127,9 +117,10 @@ def register_hwpx_template_candidate(
     # 시점까지 전혀 건드리지 않는다.
     destination.parent.mkdir(parents=True, exist_ok=True)
     audit.parent.mkdir(parents=True, exist_ok=True)
-    staging = _temporary_directory(destination.parent, destination.name, "staging")
-    audit_staging = _temporary_directory(audit.parent, audit.name, "staging")
-    backup = _temporary_backup_path(destination) if destination.exists() else None
+    temporary_root.mkdir(parents=True, exist_ok=True)
+    staging = _temporary_directory(temporary_root, destination.name, "staging")
+    audit_staging = _temporary_directory(temporary_root, audit.name, "staging")
+    backup = _temporary_backup_path(temporary_root, destination.name) if destination.exists() else None
     new_active = False
     try:
         copy_registration_artifacts(source, staging, audit_staging)
@@ -178,8 +169,8 @@ def _temporary_directory(parent: Path, name: str, purpose: str) -> Path:
     return Path(tempfile.mkdtemp(prefix=f".{name}.{purpose}-", dir=parent))
 
 
-def _temporary_backup_path(destination: Path) -> Path:
-    return destination.with_name(f".{destination.name}.backup-{uuid4().hex}")
+def _temporary_backup_path(temporary_root: Path, name: str) -> Path:
+    return temporary_root / f".{name}.backup-{uuid4().hex}"
 
 
 def _move_directory(source: Path, destination: Path) -> None:
@@ -195,7 +186,7 @@ def _restore_previous_active(
         shutil.rmtree(destination)
     if backup is not None and backup.exists():
         _move_directory(backup, destination)
-def _validate_candidate(source: Path) -> dict[str, str]:
+def _validate_candidate(source: Path, temporary_root: Path) -> dict[str, str]:
     if not source.is_dir():
         raise TemplateRegistrationError(f"candidate directory not found: {source}")
 
@@ -242,7 +233,7 @@ def _validate_candidate(source: Path) -> dict[str, str]:
     if (source / "semantic_contract.json").is_file():
         _validate_contract_complete_candidate(source)
     else:
-        _validate_legacy_candidate_renders(source)
+        _validate_legacy_candidate_renders(source, temporary_root)
 
     values = {}
     for name in ("institution", "document_type", "template_id"):
@@ -255,7 +246,7 @@ def _validate_candidate(source: Path) -> dict[str, str]:
     return values
 
 
-def _validate_legacy_candidate_renders(source: Path) -> None:
+def _validate_legacy_candidate_renders(source: Path, temporary_root: Path) -> None:
     """source-extracted/legacy 후보(semantic_contract.json 없음)도 승인 전에
     자신의 content.sample.json으로 실제 round-trip 렌더가 되는지 확인한다.
 
@@ -277,14 +268,12 @@ def _validate_legacy_candidate_renders(source: Path) -> None:
     fields = sample.get("fields") if isinstance(sample, dict) else None
     if not isinstance(fields, dict) or not fields:
         return
-    try:
-        sandbox_root = require_sandbox_temp_root()
-    except SandboxUnavailableError as exc:
-        raise TemplateRegistrationError(str(exc)) from exc
-    with tempfile.TemporaryDirectory(dir=sandbox_root) as tmp:
+    temporary_root.mkdir(parents=True, exist_ok=True)
+    with tempfile.TemporaryDirectory(dir=temporary_root) as tmp:
         try:
             result = render_candidate_roundtrip(
-                source, fields, Path(tmp) / "registration_renderability_check.hwpx"
+                source, fields, Path(tmp) / "registration_renderability_check.hwpx",
+                temporary_root=temporary_root,
             )
         except (HwpxTemplateRenderError, OSError, ValueError) as exc:
             raise TemplateRegistrationError(

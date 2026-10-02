@@ -18,9 +18,10 @@ SPEC = ROOT / "tests/fixtures/template-spec/weekly_report.template_spec.json"
 def test_authoring_cli_persists_a_semantic_candidate_bundle(
     tmp_path: Path,
     capsys,
+    sandbox_author_registry: Path,
 ) -> None:
     candidate_id = f"cand_vertical_slice_{uuid.uuid4().hex}"
-    candidate = tmp_path / "template-candidates" / candidate_id
+    candidate = sandbox_author_registry / "candidates" / candidate_id
     exit_code = author_hwpx_template.main(
         [
             "--template-request", str(REQUEST),
@@ -92,6 +93,7 @@ def test_authoring_cli_persists_a_semantic_candidate_bundle(
 def test_semantic_role_binding_rejects_a_content_placement_redeclared_as_fixed(
     tmp_path: Path,
     capsys,
+    sandbox_author_registry: Path,
 ) -> None:
     semantic = json.loads(SEMANTIC.read_text(encoding="utf-8"))
     current_week = next(entry for entry in semantic["elements"] if entry["element_id"] == "current_week")
@@ -113,7 +115,7 @@ def test_semantic_role_binding_rejects_a_content_placement_redeclared_as_fixed(
             "--template-spec", str(SPEC),
             "--institution", "edudoc",
             "--document-type", "주간업무보고서",
-            "--output-dir", str(tmp_path / "invalid-semantic-candidate"),
+            "--output-dir", str(sandbox_author_registry / "candidates" / "invalid-semantic-candidate"),
             "--allow-noncanonical-inputs-for-test",
             "--candidate-id", f"cand_invalid_{uuid.uuid4().hex}",
         ]
@@ -128,6 +130,7 @@ def test_semantic_role_binding_rejects_a_content_placement_redeclared_as_fixed(
 def test_authoring_cli_rejects_mismatched_template_request_id(
     tmp_path: Path,
     capsys,
+    sandbox_author_registry: Path,
 ) -> None:
     request = json.loads(REQUEST.read_text(encoding="utf-8"))
     request["request_id"] = "different-request"
@@ -142,7 +145,7 @@ def test_authoring_cli_rejects_mismatched_template_request_id(
             "--template-spec", str(SPEC),
             "--institution", "edudoc",
             "--document-type", "주간업무보고서",
-            "--output-dir", str(tmp_path / "invalid-request-candidate"),
+            "--output-dir", str(sandbox_author_registry / "candidates" / "invalid-request-candidate"),
             "--allow-noncanonical-inputs-for-test",
             "--candidate-id", f"cand_request_mismatch_{uuid.uuid4().hex}",
         ]

@@ -29,6 +29,7 @@ from core.adapters.hwpx_semantic_contract import (  # noqa: E402
     persist_candidate_contract_artifacts,
 )
 from core.adapters.hancom_page_count import validate_native_page_count  # noqa: E402
+from core.registry_config import RegistryConfigError, connect_registry, resolve_registry_root  # noqa: E402
 
 
 class SnapshotMismatchError(ValueError):
@@ -65,10 +66,24 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--rules", type=Path, help="추가 콘텐츠 분리 규칙")
     parser.add_argument("--contract-artifact-dir", type=Path, help="self-authored contract artifact staging directory")
     parser.add_argument("--required-native-pages", type=int)
+    parser.add_argument("--registry-root", type=Path, help="외부 template registry 루트")
     args = parser.parse_args(argv)
+    try:
+        registry_root = resolve_registry_root(args.registry_root)
+        connect_registry(registry_root)
+    except RegistryConfigError as exc:
+        print(json.dumps({"ok": False, "error": str(exc)}, ensure_ascii=False))
+        return 1
+    return _run(args, registry_root)
+
+
+def _run(args: argparse.Namespace, registry_root: Path) -> int:
     if args.output_dir is None:
         candidate_id = args.candidate_id or f"cand_{uuid.uuid4().hex}"
-        args.output_dir = ROOT / "sandbox" / "template-candidates" / candidate_id
+        args.output_dir = registry_root / "candidates" / candidate_id
+    if args.output_dir.parent.resolve() != (registry_root / "candidates").resolve():
+        print(json.dumps({"ok": False, "error": "candidate output must be directly inside registry candidates/"}, ensure_ascii=False))
+        return 1
 
     template_id = args.template_id
     template_id_source = "provided" if template_id is not None else "generated"
@@ -86,6 +101,7 @@ def main(argv: list[str] | None = None) -> int:
             template_name=args.document_type,
             institution=args.institution,
             rules_path=args.rules,
+            temporary_root=registry_root / "_tmp",
         )
         candidate_data = json.loads(
             separation.extraction.template_json.read_text(encoding="utf-8")
@@ -103,9 +119,7 @@ def main(argv: list[str] | None = None) -> int:
         # 이미 등록된 템플릿이 있으면, alias_map이 묶어 둔 field_id가 후보에서
         # 같은 내용을 가리키는지 먼저 확인한다. field_id는 순번이라 앞쪽 분류가
         # 하나만 달라져도 뒤 번호가 조용히 다른 텍스트로 밀린다.
-        field_identity = TemplateRegistry(
-            ROOT / "templates" / "institutions"
-        ).verify_candidate_field_identity(
+        field_identity = TemplateRegistry(registry_root / "approved").verify_candidate_field_identity(
             args.institution,
             args.document_type,
             args.output_dir,
@@ -117,6 +131,7 @@ def main(argv: list[str] | None = None) -> int:
             args.output_dir,
             sample_content.fields,
             sample_output,
+            temporary_root=registry_root / "_tmp",
         )
 
         test_fields = {
@@ -142,6 +157,7 @@ def main(argv: list[str] | None = None) -> int:
             args.output_dir,
             test_fields,
             test_output,
+            temporary_root=registry_root / "_tmp",
         )
         leftover = sorted(
             set(sample_render.leftover_placeholders) | set(test_render.leftover_placeholders)

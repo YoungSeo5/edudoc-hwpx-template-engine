@@ -10,6 +10,7 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 from pathlib import Path
+import shutil
 
 import pytest
 
@@ -35,6 +36,11 @@ def test_render_from_source_refuses_final_render_when_fields_are_unresolved(
     source = tmp_path / "report.md"
     source.write_text(MINIMAL_SOURCE, encoding="utf-8")
     output = tmp_path / "output.hwpx"
+    approved_root = tmp_path / "registry" / "approved"
+    shutil.copytree(
+        Path(__file__).resolve().parents[2] / "templates" / "institutions" / "금융감독원" / "금감원 원장보고",
+        approved_root / "금융감독원" / "금감원 원장보고",
+    )
 
     with pytest.raises(HwpxUnresolvedFieldsError) as excinfo:
         render_document_from_source(
@@ -43,6 +49,7 @@ def test_render_from_source_refuses_final_render_when_fields_are_unresolved(
             source,
             output,
             EXECUTION_CONTEXT,
+            registry_root=approved_root,
         )
 
     assert "checkbox_line_01" in excinfo.value.unresolved_fields

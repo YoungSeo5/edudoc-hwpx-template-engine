@@ -30,6 +30,7 @@ import hashlib
 import json
 import shutil
 import sys
+import tempfile
 import uuid
 from dataclasses import replace
 from pathlib import Path
@@ -58,6 +59,7 @@ from core.adapters.hwpx_semantic_contract import (  # noqa: E402
     load_semantic_contract,
     write_resolved_authoring_contract,
 )
+from core.registry_config import RegistryConfigError, connect_registry, resolve_registry_root  # noqa: E402
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -79,28 +81,47 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument(
         "--output-dir",
         type=Path,
-        help="테스트용 candidate 출력 폴더; 생략하면 sandbox/template-candidates 아래에 생성",
+        help="candidate 출력 폴더; 생략하면 registry/candidates 아래에 생성",
     )
     parser.add_argument("--candidate-id", help="candidate 식별자(생략하면 cand_<uuid>)")
     parser.add_argument("--institution", required=True, help="기관명")
     parser.add_argument("--document-type", required=True, help="문서 유형")
     parser.add_argument("--template-id", help="템플릿 식별자(생략하면 자동 생성)")
+    parser.add_argument("--registry-root", type=Path, help="외부 template registry 루트")
     parser.add_argument(
         "--allow-noncanonical-inputs-for-test",
         action="store_true",
         help="테스트/개발 전용: canonical self-authored input 검사를 명시적으로 해제",
     )
     args = parser.parse_args(argv)
+    try:
+        registry_root = resolve_registry_root(args.registry_root)
+        connect_registry(registry_root)
+    except RegistryConfigError as exc:
+        print(json.dumps({"ok": False, "stage": "registry", "error": str(exc)}, ensure_ascii=False))
+        return 1
+    temporary_root = registry_root / "_tmp"
+    temporary_root.mkdir(parents=True, exist_ok=True)
+    with tempfile.TemporaryDirectory(prefix="hwpx-author-", dir=temporary_root) as temporary:
+        return _run(args, registry_root, Path(temporary))
+
+
+def _run(args: argparse.Namespace, registry_root: Path, authoring_dir: Path) -> int:
 
     candidate_id = args.candidate_id or f"cand_{uuid.uuid4().hex}"
-    candidate_dir = args.output_dir or (ROOT / "sandbox" / "template-candidates" / candidate_id)
-    authoring_dir = candidate_dir.parent / f"{candidate_dir.name}.authoring"
+    candidate_dir = args.output_dir or (registry_root / "candidates" / candidate_id)
     try:
-        _validate_production_inputs(args, candidate_dir)
+        if candidate_dir.parent.resolve() != (registry_root / "candidates").resolve():
+            raise ValueError("candidate output must be directly inside registry candidates/")
+        _validate_production_inputs(args, candidate_dir, registry_root)
         template_request = _load_contract(args.template_request, "TemplateRequest")
         semantic_raw = _load_contract(args.semantic_contract, "Semantic Contract")
         institution_design = _load_contract(args.institution_design, "Institution Design Contract")
         spec = load_template_spec(args.template_spec)
+        if not args.allow_noncanonical_inputs_for_test and spec.family_recipe_path:
+            recipe_root = registry_root / "provision" / args.institution / "_families"
+            if not Path(spec.family_recipe_path).resolve().is_relative_to(recipe_root.resolve()):
+                raise ValueError("family recipe must be inside registry provision/")
         semantic = load_semantic_contract(args.semantic_contract)
         _validate_contract_identities(
             template_request,
@@ -116,7 +137,6 @@ def main(argv: list[str] | None = None) -> int:
             resolve(args.institution_design, spec, binding),
             semantic_placements=placements,
         )
-        authoring_dir.mkdir(parents=True, exist_ok=False)
         source_hwpx = generate_source_hwpx(
             resolved,
             authoring_dir / "source.hwpx",
@@ -162,6 +182,8 @@ def main(argv: list[str] | None = None) -> int:
         str(source_hwpx),
         "--output-dir",
         str(candidate_dir),
+        "--registry-root",
+        str(registry_root),
         "--institution",
         args.institution,
         "--document-type",
@@ -254,20 +276,19 @@ def _stage_contract_artifacts(
     write_resolved_authoring_contract(resolved, contracts / "resolved_authoring_contract.json")
 
 
-def _validate_production_inputs(args: argparse.Namespace, candidate_dir: Path) -> None:
-    candidate_root = (ROOT / "sandbox" / "template-candidates").resolve()
+def _validate_production_inputs(args: argparse.Namespace, candidate_dir: Path, registry_root: Path) -> None:
     if getattr(args, "allow_noncanonical_inputs_for_test", False):
-        if candidate_dir.resolve().is_relative_to(candidate_root):
+        if not registry_root.resolve().is_relative_to((ROOT / "sandbox").resolve()):
             raise ValueError(
-                "--allow-noncanonical-inputs-for-test cannot create a production candidate"
+                "--allow-noncanonical-inputs-for-test requires a sandbox registry"
             )
         return
-    canonical_root = ROOT / "templates" / "self-authored" / args.institution / args.document_type
+    canonical_root = registry_root / "self-authored" / args.institution / args.document_type
     expected = {
         "template_request": canonical_root / "template_request.json",
         "semantic_contract": canonical_root / "semantic_contract.json",
         "template_spec": canonical_root / "template_spec.json",
-        "institution_design": ROOT / "templates" / "institutions" / args.institution / "_design" / "design.json",
+        "institution_design": registry_root / "provision" / args.institution / "_design" / "design.json",
     }
     supplied = {
         "template_request": args.template_request,

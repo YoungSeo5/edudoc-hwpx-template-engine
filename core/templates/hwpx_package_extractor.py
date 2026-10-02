@@ -54,6 +54,7 @@ def extract_hwpx_template(
     template_name: str | None = None,
     institution: str = "확인 필요",
     fixture_dir: Path | str | None = None,
+    temporary_root: Path,
 ) -> HwpxExtractionResult:
     """Extract selected HWPX assets without modifying or reserializing XML."""
     source = Path(source)
@@ -62,6 +63,7 @@ def extract_hwpx_template(
     # 흐름 1: 입력이 실제 HWPX ZIP인지, template_id와 출력 경로가 안전한지
     # 먼저 확인한다. 기존 폴더에 덮어쓰지 않고 새 후보 폴더만 만든다.
     _validate_inputs(source, output_dir, template_id)
+    temporary_root.mkdir(parents=True, exist_ok=True)
     output_dir.mkdir(parents=True, exist_ok=False)
 
     warnings: list[str] = []
@@ -74,7 +76,7 @@ def extract_hwpx_template(
     try:
         # 흐름 2: ZIP에서 템플릿 분석에 필요한 항목만 임시 작업공간으로
         # 안전하게 꺼낸다. 경로 탈출과 과도한 압축 해제 크기는 하위 함수가 막는다.
-        with tempfile.TemporaryDirectory(prefix=".extracting-", dir=output_dir) as temp_name:
+        with tempfile.TemporaryDirectory(prefix=".extracting-", dir=temporary_root) as temp_name:
             workspace = Path(temp_name)
             with ZipFile(source, "r") as package:
                 package_entries = [info.filename for info in package.infolist()]

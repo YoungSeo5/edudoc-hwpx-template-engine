@@ -1,0 +1,4 @@
+interface:
+  display_name: "기관 HWPX 템플릿"
+  short_description: "기관 HWPX 양식 제작·검증·승인본 렌더링"
+  default_prompt: "Use $hwpx-institution-template to create or render an institutional HWPX document."

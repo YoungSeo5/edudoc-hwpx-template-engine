@@ -18,17 +18,18 @@ the following artifact.
 
 | Artifact | Authoritative responsibility | Canonical location | Current runtime status |
 |---|---|---|---|
-| TemplateRequest | Preserve the user's stated purpose, items, fixed text, reference scope, and constraints | production source: `templates/self-authored/<institution>/<document_type>/template_request.json`; candidate snapshot until approval | Not implemented |
-| Semantic Template Contract | Agent decision: canonical content fields, fixed elements, requiredness, cardinality, and content type | production source: `templates/self-authored/<institution>/<document_type>/semantic_contract.json`; candidate snapshot until approval | Not implemented |
-| Institution Design Contract | Institution policy/defaults for self-authored documents, distinct from observations | `templates/institutions/<institution>/_design/design.json` | Not implemented |
-| executable TemplateSpec | Concrete ordered layout and provenance references, consumed by authoring | production source: `templates/self-authored/<institution>/<document_type>/template_spec.json`; candidate snapshot until approval | Current parser supports only its `sections[]`, `page`, and `styles` subset |
+| TemplateRequest | Preserve the user's stated purpose, items, fixed text, reference scope, and constraints | production source: `<registry>/self-authored/<institution>/<document_type>/template_request.json`; candidate snapshot until approval | Not implemented |
+| Semantic Template Contract | Agent decision: canonical content fields, fixed elements, requiredness, cardinality, and content type | production source: `<registry>/self-authored/<institution>/<document_type>/semantic_contract.json`; candidate snapshot until approval | Not implemented |
+| Institution Design Contract | Institution policy/defaults for self-authored documents, distinct from observations | `<registry>/provision/<institution>/_design/design.json` | Not implemented |
+| executable TemplateSpec | Concrete ordered layout and provenance references, consumed by authoring | production source: `<registry>/self-authored/<institution>/<document_type>/template_spec.json`; candidate snapshot until approval | Current parser supports only its `sections[]`, `page`, and `styles` subset |
 | canonical content | Per-job `template_id` plus canonical `field_id -> value` map | caller-owned `content.json` / prepared in memory | Existing renderer input; requiredness is not yet enforced from semantic contract |
 
-The candidate root is always under `sandbox/template-candidates/`; candidate
-artifacts must not be created in `templates/institutions/`. The approved root
-is always `templates/institutions/<institution>/<document_type>/`. The latter
-has exactly one active approved template per institution/document-type path;
-its `template_id` remains the canonical immutable revision identity.
+The candidate root is always `<registry>/candidates/`; candidate artifacts must
+not be created under `<registry>/approved/`. The approved root is always
+`<registry>/approved/<institution>/<document_type>/` and contains only
+explicitly approved, final-renderable document packages. The latter has exactly
+one active approved template per institution/document-type path; its
+`template_id` remains the canonical immutable revision identity.
 
 An approved candidate with a different `template_id` may replace the active
 package only after the full approval gate passes. Registration stages the new
@@ -38,23 +39,26 @@ confirmation fails. The candidate is retained until the replacement succeeds.
 
 The canonical path retains only the active runtime package. This contract does
 not create a persistent revision archive, active pointer, or rollback feature.
-Audit evidence is persistent per revision: `_audit/<old_template_id>` remains,
-and `_audit/<new_template_id>` is added for the replacement.
+Audit evidence is persistent per revision:
+`<registry>/_audit/<old_template_id>` remains, and
+`<registry>/_audit/<new_template_id>` is added for the replacement.
 
-`templates/institutions/` is a protected data submodule. This repository
-defines that layout but does not create or edit its institution data.
+The package provides only read-only `edudoc` design provision. A registry is
+initialized only by explicit user request; provision is copied to
+`<registry>/provision/<institution>/`. Connecting an existing registry never
+overwrites its design, assets, family recipes, or approved templates.
 
 ### Production self-authoring input selection
 
 A production self-authored candidate is one written directly under
-`sandbox/template-candidates/<candidate_id>/`. It accepts exactly these
+`<registry>/candidates/<candidate_id>/`. It accepts exactly these
 authoritative inputs for its `(institution, document_type)`:
 
 ```text
-templates/self-authored/<institution>/<document_type>/template_request.json
-templates/self-authored/<institution>/<document_type>/semantic_contract.json
-templates/self-authored/<institution>/<document_type>/template_spec.json
-templates/institutions/<institution>/_design/design.json
+<registry>/self-authored/<institution>/<document_type>/template_request.json
+<registry>/self-authored/<institution>/<document_type>/semantic_contract.json
+<registry>/self-authored/<institution>/<document_type>/template_spec.json
+<registry>/provision/<institution>/_design/design.json
 ```
 
 The `TemplateSpec` explicitly names its family recipe; the TemplateRequest
@@ -64,10 +68,10 @@ from any missing canonical input to another source. The authoring CLI enforces
 canonical paths regardless of its output directory. A non-canonical
 test/development invocation must explicitly pass
 `--allow-noncanonical-inputs-for-test`; that opt-in is rejected when the output
-would be a production candidate under `sandbox/template-candidates/`.
+would be a production candidate under `<registry>/candidates/`.
 
-The following are never production self-authoring inputs: `sandbox/template-
-candidates/**`, QA/roundtrip output, an experimental candidate, or any
+The following are never production self-authoring inputs:
+`<registry>/candidates/**`, QA/roundtrip output, an experimental candidate, or any
 test-only fixture. A candidate records `authoring_input.provenance.json` with
 the source path, SHA-256, and identity of the request, semantic contract,
 TemplateSpec, Institution Design, and explicit family/reference inputs.
@@ -146,7 +150,7 @@ is not itself an observation.
 The canonical design path is:
 
 ```text
-templates/institutions/<institution>/_design/
+<registry>/provision/<institution>/_design/
   design.json
   assets/<asset files>
 ```

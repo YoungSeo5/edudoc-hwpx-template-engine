@@ -13,9 +13,9 @@ from .hwpx_alias_map import (
     RepeatBlock,
     load_alias_map,
 )
-from .hwpx_fss_director_report import (
-    FssPackageMetadata,
-    build_fss_package_metadata,
+from .hwpx_package_metadata import (
+    PackageMetadata,
+    build_package_metadata,
 )
 from .hwpx_template_metadata import (
     MetadataResolutionError,
@@ -90,7 +90,7 @@ class PreparedRenderContent:
     placeholder_map: Mapping[str, JsonValue]
     render_plan: ResolvedRenderPlan
     unknown_keys: tuple[str, ...]
-    package_metadata: FssPackageMetadata | None
+    package_metadata: PackageMetadata | None
 
 
 def load_placeholder_map(template_dir: Path | str) -> Mapping[str, JsonValue]:
@@ -238,7 +238,7 @@ def prepare_hwpx_template_input(
         render_plan=resolved.render_plan,
         unknown_keys=resolved.unknown_keys,
         package_metadata=(
-            build_fss_package_metadata(
+            build_package_metadata(
                 resolved.metadata,
                 requester_name=execution_context.requester_name,
                 requested_at=execution_context.requested_at,
