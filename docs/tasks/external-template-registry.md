@@ -2,7 +2,7 @@
 
 ## Status
 
-ACTIVE
+DONE
 
 ## Parent system contract
 
@@ -20,8 +20,9 @@ template semantics, layout authoring, rendering, QA, or approval requirements.
 ## Goal
 
 Keep the standalone skill package limited to code, `SKILL.md`, shared runtime,
-and read-only `edudoc` design provision. Store mutable institution artifacts in
-one user- or organization-selected external registry.
+linked reference documents and examples, and read-only `edudoc` design
+provision. Store mutable institution artifacts in one user- or
+organization-selected external registry.
 
 ```text
 <registry>/
@@ -139,8 +140,9 @@ human decision tied to the candidate ID and digest.
   storage boundaries.
 - Update the standalone skill instructions and package so they do not retain
   mutable template artifacts.
-- Preserve existing unapproved drafts only through an explicit, non-approving
-  migration step after a registry path is selected.
+- Preserve existing unapproved drafts outside the skill package pending a
+  registry choice; move them into the selected registry only through an
+  explicit, non-approving migration step.
 
 ## Prohibitions
 
@@ -161,8 +163,9 @@ human decision tied to the candidate ID and digest.
 3. Candidate, active approved package, and audit paths remain separate.
 4. Registration still requires machine QA, visual-review evidence, matching
    candidate digest, and explicit approval.
-5. The standalone package contains only the runtime and read-only provision
-   needed to initialize a registry when explicitly requested.
+5. The standalone package contains only runtime code, skill instructions,
+   linked reference documents and examples, and read-only provision needed
+   to initialize a registry when explicitly requested.
 6. Production workflow temporary artifacts are not created outside
    `<registry>/_tmp/`, including in OS temporary storage or the package's
    internal `sandbox/`, except for the one same-directory atomic-replace
@@ -171,6 +174,36 @@ human decision tied to the candidate ID and digest.
 7. After a registry is initialized or connected, runtime Institution Design and
    document family recipe lookup does not read package provision
    (`templates/institutions/...`).
+
+## Follow-up
+
+### Registry setup at Slack agent deployment
+
+If the deployment environment can use a filesystem registry path, obtain that
+path from the user or deployment configuration. Run
+`configure_hwpx_registry.py init` for an explicitly requested new registry,
+or `configure_hwpx_registry.py connect` for an existing one. The current CLI
+command is `init`, not `initialize`.
+
+Copy the preserved, unapproved contents of
+`C:\Users\ohyou\edudoc-hwpx-pending-migration` into the selected registry's
+`self-authored/` and `candidates/` directories without overwriting existing
+files. Compare file lists, sizes, and SHA-256 before and after. Keep candidate
+status unapproved; do not automatically move anything into `approved/`.
+
+### Google Drive connector/API environment
+
+If the Slack agent receives Google Drive only through a connector/API rather
+than a filesystem path, the current `Path`-based registry cannot use it
+directly. Implement Drive connector/API integration as a separate task.
+
+### Other follow-up
+
+- Email notification and approver-role management.
+- Registry revision history and concurrent shared-drive coordination.
+- The existing
+  `test_one_page_recipe_expands_generic_components_in_declared_order`
+  failure: its recipe omits the required `page` object.
 
 ## Issue classification
 
@@ -183,7 +216,6 @@ human decision tied to the candidate ID and digest.
   `docs/tasks/document-render-output-acl-inheritance.md`.
 - `BLOCKER`: runtime design or family lookup reads package provision instead of
   registry provision.
-- `FOLLOW-UP`: Google Drive API, email notification, approver-role management,
-  registry revision history, and concurrent shared-drive coordination.
+- `FOLLOW-UP`: the deployment and other items in Follow-up above.
 - `OUT_OF_SCOPE`: renderer redesign, new document-family materializers, and
   changes to private template data.
