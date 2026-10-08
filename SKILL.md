@@ -52,7 +52,7 @@ python scripts/templates/configure_hwpx_registry.py connect \
 없이 실행하지 않는다.
 
 ```bash
-python scripts/templates/configure_hwpx_registry.py initialize \
+python scripts/templates/configure_hwpx_registry.py init \
   --registry-root <new-empty-registry>
 ```
 
@@ -185,6 +185,8 @@ Python 호출은 `core.document_api` 공개 경계만 사용한다.
 
 실행 전 패키지 root, Python 및 requirements, `skills/hwp-skill/`,
 `<registry>/provision/edudoc/_design/design.json`과 `_families/`를 확인한다.
+CLI 예시의 `python`은 `requirements.txt` 의존성이 설치된 Python을 뜻한다.
+그 환경이 없으면 실행을 멈추고 환경 준비를 요청한다.
 패키지의 `templates/institutions/edudoc/_design/`·`_families/`는 신규 registry
 초기화에만 쓰는 읽기 전용 provision 원본이다.
 registry 미설정·미연결·손상 상태에서는 정확한 실패와 필요한 사용자 조치만 보고한다.
